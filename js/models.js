@@ -1459,6 +1459,7 @@
     guard: { model: 'pengawal', strike: 'serang' },
     archer: { model: 'pemanah', strike: 'serang', at: 0.58 },      // memanah: saat lepas, tangan kanan justru di belakang
     ranger: { model: 'pemburu', strike: 'serang', at: 0.58 },
+    berserk: { model: 'pengamuk', strike: 'serang', at: 0.29 },      // dua hantaman beruntun: kapak kanan 0,29 s, kiri 0,46 s
   };
   const kits = {};
   function rigKit(type) {
