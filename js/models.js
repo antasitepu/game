@@ -1513,7 +1513,28 @@
     }), back]);
     return kit;
   }
-  models.rigged = type => !!rigKit(type);
+  // Hewan liar berkerangka (kaki empat, tulang berawalan Beast). model: nama model per varian (rusa: 0 betina, 1 jantan
+  // bertanduk). laju: laju tanah rancangan klip, dipakai bila pengukuran tidak andal (angkatan kuku babi lebih kecil
+  // daripada ambang pengukur). Klip: diam, jalan, lari, makan (merumput), mati (pose akhirnya = bangkai), babi: serang.
+  const BEAST_HOOVES = ['BeastFrontL3', 'BeastFrontR3', 'BeastHindL3', 'BeastHindR3'];
+  const BEASTS = {
+    deer: { model: ['rusa', 'rusa_jantan'] },
+    boar: { model: ['babi'], strike: 'serang', at: 0.28, laju: { jalan: 0.53, lari: 2.34 } },
+  };
+  const beastKits = {};
+  function beastKit(type, variant) {
+    const R = BEASTS[type], name = R && (R.model[variant] || R.model[0]);
+    if (!name) return null;
+    if (name in beastKits) return beastKits[name];
+    const m = BF.assets.model[name], k = m && m.klip;
+    if (!k || !k.diam || !k.jalan || !k.lari || !k.makan || !k.mati) return (beastKits[name] = null);
+    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.35, 0.05), 1);
+    const gerak = {};
+    for (const n of ['jalan', 'lari']) gerak[n] = { clip: k[n], laju: (R.laju && R.laju[n]) || gaitSpeed(m, k[n], BEAST_HOOVES) };
+    const strike = R.strike && k[R.strike] ? R.strike : null;
+    return (beastKits[name] = { type, beast: true, m, K: m.kerangka, gerak, strike, strikeAt: strike ? Math.max(0, R.at - 0.12) : 0, tint: {}, extras: [] });
+  }
+  models.rigged = (type, variant) => !!(BEASTS[type] ? beastKit(type, variant || 0) : rigKit(type));
 
   // Tiap unit punya tulang dan AnimationMixer sendiri; geometri, bahan, dan klip dipakai bersama. Bahan bertanda `tim`
   // (tunik, kain) memakai salinan per pemain yang dikalikan warna tim.
@@ -1575,9 +1596,36 @@
     for (const res of BF.RES) if (ud.extras['pack_' + res]) ud.extras['pack_' + res].visible = !st.dead && !st.working && st.carry > 0 && st.carryType === res;
   }
 
+  // Hewan berkerangka. st: {t, id, moving, run, graze, carcass, atk (1 saat menyeruduk → 0)}. Hewan yang sudah menjadi
+  // bangkai saat pertama kali terlihat langsung berada di pose akhir klip mati.
+  function poseBeast(ud, st) {
+    const A = ud.act, kit = ud.kit, P = BF.ANIMALS[kit.type], first = ud.lastT === null, dt = first ? st.skip || 0 : Math.min(0.1, Math.max(0, st.t - ud.lastT));
+    ud.lastT = st.t;
+    const a = st.atk || 0, hit = !!kit.strike && !st.carcass && a > ud.atk0 + 0.05;
+    ud.atk0 = a;
+    if (hit) ud.once = kit.strike;
+    let want = st.carcass ? 'mati' : st.moving ? (st.run ? 'lari' : 'jalan') : st.graze ? 'makan' : 'diam';
+    if (ud.once) {
+      if (st.carcass || (!hit && ud.cur === ud.once && !A[ud.once].isRunning())) ud.once = null;
+      else want = ud.once;
+    }
+    if (want !== ud.cur || (hit && want === kit.strike)) {
+      const next = A[want], prev = ud.cur && A[ud.cur], len = next.getClip().duration;
+      next.reset();
+      next.time = want === kit.strike ? kit.strikeAt : want === 'mati' ? (first ? len - 0.001 : 0) : want === 'diam' || want === 'makan' ? (st.id * 0.37) % len : 0;
+      next.play();
+      if (prev && prev !== next) prev.crossFadeTo(next, 0.15, false);
+      ud.cur = want;
+    }
+    A.jalan.timeScale = BF.clamp(P.speed / kit.gerak.jalan.laju, 0.5, 2.6);
+    A.lari.timeScale = BF.clamp(P.run / kit.gerak.lari.laju, 0.5, 2.6);
+    ud.mixer.update(dt);
+  }
+
   // Objek unit: Group berisi SkinnedMesh + kerangkanya sendiri (geometri & material dipakai bersama antar-unit sejenis).
+  // Untuk hewan liar, owner = varian.
   models.unit = function (type, owner) {
-    const kit = rigKit(type);
+    const kit = BEASTS[type] ? beastKit(type, owner) : rigKit(type);
     if (kit) return riggedUnit(kit, owner);
     const d = unitDef(type, owner), group = new THREE.Group(), mat = BF.tex.mat.unit, ud = group.userData;
     ud.type = type;
@@ -1701,7 +1749,7 @@
   // Pose dari state simulasi. st: {t (detik), id, moving, working, atk (1 saat memukul → 0), carryType, carry}
   models.pose = function (group, st) {
     const ud = group.userData, type = ud.type, a = Math.min(1, Math.max(0, st.atk));
-    if (ud.mixer) { poseRigged(ud, st, a); return; }
+    if (ud.mixer) { if (ud.kit.beast) poseBeast(ud, st); else poseRigged(ud, st, a); return; }
     if (ud.parts) {                                                   // pelontar: lengan menyentak ke palang lalu ditarik kembali oleh kerekan
       const P = ud.parts;
       P.arm.rotation.x = ARM_REST + ARM_FIRE * a * a * (3 - 2 * a);

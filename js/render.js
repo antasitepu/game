@@ -581,7 +581,7 @@
       o.group.position.set(x, BF.relief.at(x, y), y);
       o.group.rotation.y = o.yaw;
       o.group.scale.setScalar(carcass ? 0.7 + 0.3 * a.food / BF.ANIMALS[a.type].food : 1);
-      models.pose(o.group, { t, id: a.id, moving: a.moving, run: a.state === 'flee' || a.state === 'charge', graze: a.state === 'graze', carcass, charge: a.state === 'charge', atk: 0 });
+      models.pose(o.group, { t, id: a.id, moving: a.moving, run: a.state === 'flee' || a.state === 'charge', graze: a.state === 'graze', carcass, charge: a.state === 'charge', atk: Math.max(0, a.atkAnim || 0) / 0.3 });
       if (sel.has(a.id)) {
         const r = take('ring2', () => new THREE.Mesh(gfx.ringGeo, M.ring[2]));
         r.position.set(x, o.group.position.y + 0.07, y);

@@ -72,6 +72,22 @@ module.exports = async ({ page, check }) => {
   // semua tipe yang modelnya sudah ada di aset memakai kerangka: klip lari, mati, dan klip pukulnya tersedia, laju langkah cocok
   const rigs = await p.ev(`['worker', 'spear', 'sword', 'guard', 'archer', 'ranger', 'berserk', 'rider', 'harcher'].map(t => { if (!BF.models.rigged(t)) return t + ':tanpa-model'; const g = BF.models.unit(t, 1), ud = g.userData, sp = BF.game.s.players[0].U[t].speed, k = ud.kit; BF.models.pose(g, { t: 0, id: 1, moving: true, atk: 0, carry: 0, speed: sp }); const ok = !!ud.mixer && ud.skeleton.bones.length === (t === 'rider' || t === 'harcher' ? 40 : 21) && ud.cur === 'lari' && !!ud.act.mati && !!ud.act[k.strike] && k.strikeAt > 0.1 && k.strikeAt < 0.5 && Math.abs(ud.act.lari.timeScale * k.gerak.lari.laju - sp) < sp * 0.03; BF.models.disposeUnit(g); return t + ':' + (ok ? 'ok' : 'salah'); })`);
   check('pekerja, tombak, pedang, pengawal, pemanah, pemburu, pengamuk, penunggang, pemanah berkuda memakai model berkerangka dari aset', rigs.every(r => r.endsWith(':ok')), rigs);
+  const hewan = await p.ev(`[['deer', 0, 'rusa'], ['deer', 1, 'rusa_jantan'], ['boar', 0, 'babi']].map(([t, v, nama]) => {
+    if (!BF.models.rigged(t, v)) return nama + ':tanpa-model';
+    const g = BF.models.unit(t, v), ud = g.userData, A = BF.ANIMALS[t], k = ud.kit;
+    let now = 0;
+    const P = st => { BF.models.pose(g, Object.assign({ t: (now += 0.05), id: 3, moving: false, run: false, graze: false, carcass: false, atk: 0 }, st)); return ud.cur; };
+    const urut = [P({}), P({ graze: true }), P({ moving: true }), P({ moving: true, run: true }), t === 'boar' ? P({ atk: 1 }) : 'serang', P({ carcass: true })].join(',');
+    const laju = Math.abs(ud.act.lari.timeScale * k.gerak.lari.laju - A.run) < A.run * 0.03 && Math.abs(ud.act.jalan.timeScale * k.gerak.jalan.laju - A.speed) < A.speed * 0.03;
+    // hewan yang sudah bangkai saat pertama terlihat: langsung di pose akhir klip mati
+    const g2 = BF.models.unit(t, v), u2 = g2.userData;
+    BF.models.pose(g2, { t: 5, id: 4, moving: false, carcass: true, atk: 0 });
+    const rebah = u2.cur === 'mati' && u2.act.mati.time > u2.act.mati.getClip().duration - 0.05;
+    const ok = ud.skeleton.bones.length === 19 && g.children[0].geometry === BF.assets.model[nama].lod[0] && urut === 'diam,makan,jalan,lari,serang,mati' && laju && rebah;
+    BF.models.disposeUnit(g); BF.models.disposeUnit(g2);
+    return nama + ':' + (ok ? 'ok' : 'salah:' + urut + ':' + laju + ':' + rebah);
+  })`);
+  check('rusa, rusa jantan, babi hutan memakai model berkerangka: klip mengikuti keadaan, laju cocok, bangkai rebah', hewan.every(r => r.endsWith(':ok')), hewan);
   const tabib = await p.ev(`(() => { if (!BF.models.rigged('healer')) return { rig: false }; const g = BF.models.unit('healer', 0), ud = g.userData; BF.models.pose(g, { t: 0, id: 1, moving: false, working: true, atk: 0, carry: 0 }); const kerja = ud.cur; BF.models.pose(g, { t: 0.1, id: 1, moving: true, working: false, atk: 0, carry: 0, speed: 2.3 }); const r = { rig: true, tulang: ud.skeleton.bones.length, kerja, lari: ud.cur, strike: ud.kit.strike }; BF.models.disposeUnit(g); return r; })()`);
   check('Tabib memakai model berkerangka: klip kerja saat menyembuhkan, tanpa klip serang', tabib.rig && tabib.tulang === 21 && tabib.kerja === 'kerja' && tabib.lari === 'lari' && tabib.strike === null, tabib);
 };
