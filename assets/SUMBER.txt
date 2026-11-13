@@ -20,6 +20,8 @@ sendiri oleh skrip tools/aset/blender/rusa.py, babi.py, dan hewan.py; tekstur bu
 Bila nanti ditambah aset berlisensi CC BY (mis. hasil paket gratis generator AI), cantumkan nama dan pembuatnya di sini
 dan di layar Bantuan game — lisensi itu mewajibkan atribusi.
 
+Ikon aplikasi (ikon/ikon-*.png): digambar sendiri oleh skrip tools/aset/blender/ikon.py, tanpa bahan pihak luar.
+
 Ringkasan lisensi untuk rilis publik:
 - Aset dari Poly Haven berlisensi CC0: boleh dipakai dan disebarkan tanpa syarat; menyebut sumbernya tidak wajib.
 - Model, kerangka, dan gerak unit serta hewan dibuat sendiri untuk game ini.
