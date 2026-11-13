@@ -9,7 +9,7 @@ const { sleep } = require('../cdp');
 
 module.exports = async ({ page, check, root }) => {
   const PORT = 8990 + (process.pid % 9), host = '127.0.0.1:' + PORT, base = 'http://' + host;
-  const env = Object.assign({}, process.env, { PORT: String(PORT), HOST: '127.0.0.1', STALL_MS: '1500', IDLE_MS: '2500', LOBBY_MS: '4000', ROOMS_PER_IP_PER_MIN: '3', MAX_CONN_PER_IP: '8' });
+  const env = Object.assign({}, process.env, { PORT: String(PORT), HOST: '127.0.0.1', STALL_MS: '1500', IDLE_MS: '2500', LOBBY_MS: '4000', ROOMS_PER_IP_PER_MIN: '4', MAX_CONN_PER_IP: '8', RECONNECT_MS: '3000' });
   const srv = spawn(process.execPath, [path.join(root, 'server.js')], { env, stdio: 'ignore' });
   const get = (p, headers) => new Promise((res, rej) => { http.get(base + p, { headers: headers || {} }, r => { const cs = []; r.on('data', c => cs.push(c)); r.on('end', () => res({ status: r.statusCode, h: r.headers, body: Buffer.concat(cs) })); }).on('error', rej); });
   // jabat tangan WebSocket mentah (untuk mengatur kepala Origin): true bila server menjawab 101
@@ -91,6 +91,58 @@ module.exports = async ({ page, check, root }) => {
     check('ruangan yang sudah dimulai tetap terkunci walau ada kursi kosong', !last(late, 'joined') && !!last(late, 'error'));
     p0.close(); p2.close(); late.close();
 
+    // ---- sambung ulang: kursi ditahan, kunci kursi, paket yang terlewat dikirim ulang, kursi hangus
+    const q0 = await open(), q1 = await open(), q2 = await open();
+    q0.send({ t: 'create', v: 'v' });
+    await sleep(150);
+    const c3 = last(q0, 'room').code;
+    q1.send({ t: 'join', code: c3, v: 'v' }); await sleep(100);
+    q2.send({ t: 'join', code: c3, v: 'v' }); await sleep(100);
+    const keys = [last(q0, 'room').key, last(q1, 'joined').key, last(q2, 'joined').key];
+    check('tiap kursi mendapat kunci rahasia sendiri', keys.every(k => /^[0-9a-f]{32}$/.test(k || '')) && new Set(keys).size === 3);
+    q0.send({ t: 'lock' });
+    const turn = (c, n) => c.send({ t: 'msg', d: { k: 't', n, c: [] } });
+    for (let n = 2; n <= 4; n++) for (const c of [q0, q1, q2]) turn(c, n);
+    q0.send({ t: 'ping' });
+    await sleep(200);
+    check('ping dijawab pong', !!last(q0, 'pong'));
+    q1.close();
+    await sleep(500);
+    check('koneksi putus di tengah permainan: kursi ditahan, yang lain diberi tahu sedang menunggu', (last(q0, 'away') || {}).slot === 1 && last(q0, 'away').ms === 3000 && (last(q2, 'away') || {}).slot === 1 && !last(q0, 'left'), last(q0, 'away'));
+    turn(q0, 5); turn(q0, 6); turn(q2, 5); turn(q2, 6);
+    const bad = await open();
+    bad.send({ t: 'rejoin', code: c3, slot: 1, key: '0'.repeat(32), v: 'v' });
+    await sleep(200);
+    check('sambung ulang dengan kunci salah ditolak', (last(bad, 'error') || {}).code === 'rejoin' && !last(bad, 'rejoined') && !last(q0, 'back'), last(bad, 'error'));
+    bad.close();
+    const q1b = await open();
+    q1b.send({ t: 'rejoin', code: c3, slot: 1, key: keys[1], v: 'v', have: { 0: 4, 2: 5 } });
+    await sleep(300);
+    const rj = last(q1b, 'rejoined') || {}, ulang = q1b.msgs.filter(m => m.t === 'msg').map(m => m.from + ':' + m.d.n).join(',');
+    check('kunci benar: kursi kembali, server menyebut giliran terakhir yang ia terima dari kita', rj.slot === 1 && rj.got === 4 && rj.here.join() === '0,2' && rj.away.length === 0, rj);
+    check('paket giliran yang terlewat dikirim ulang (hanya yang belum dimiliki)', ulang === '0:5,0:6,2:6', ulang);
+    check('pemain lain diberi tahu ia tersambung lagi', (last(q0, 'back') || {}).slot === 1 && (last(q2, 'back') || {}).slot === 1);
+    turn(q1b, 5);                      // masih satu giliran di belakang yang lain
+    await sleep(200);
+    check('sesudah kembali, paketnya diteruskan lagi dengan slot yang sama', q0.msgs.some(m => m.t === 'msg' && m.from === 1 && m.d.n === 5));
+    q2.close();
+    await sleep(3600);
+    check('masa tunggu habis → kursi dikosongkan, yang lain diberi tahu', (last(q0, 'left') || {}).slot === 2 && (last(q1b, 'left') || {}).slot === 2, last(q0, 'left'));
+    // saat masa tunggu habis, ruangan sudah lama sunyi (semua menunggu): pemain yang tertinggal satu giliran tidak boleh
+    // langsung dikira macet — ia harus diberi waktu melanjutkan
+    check('pemain yang tersisa tidak langsung dikeluarkan sebagai "macet" begitu masa tunggu habis', !q1b.closed && q0.msgs.filter(m => m.t === 'left').length === 1);
+    turn(q1b, 6);
+    const telat = await open();
+    telat.send({ t: 'rejoin', code: c3, slot: 2, key: keys[2], v: 'v' });
+    await sleep(200);
+    check('kembali setelah masa tunggu habis ditolak', (last(telat, 'error') || {}).code === 'rejoin' && !last(telat, 'rejoined'));
+    telat.close();
+    const nLeft = q0.msgs.filter(m => m.t === 'left').length;
+    q1b.send({ t: 'bye' });
+    await sleep(300);
+    check('pamit (bye): langsung dianggap keluar, tanpa masa tunggu', q0.msgs.filter(m => m.t === 'left').length === nLeft + 1 && last(q0, 'left').slot === 1 && q0.msgs.filter(m => m.t === 'away').length === 2);
+    q1b.close(); q0.close();
+
     // ---- koneksi tanpa ruangan & ruangan lobi yang menganggur
     const idle = await open(), lob = await open();
     lob.send({ t: 'create', v: 'v' });
@@ -103,7 +155,7 @@ module.exports = async ({ page, check, root }) => {
     const r4 = await open();
     r4.send({ t: 'create', v: 'v' });
     await sleep(200);
-    check('ruangan keempat dalam semenit dari alamat yang sama ditolak', !last(r4, 'room') && /Terlalu banyak ruangan/.test((last(r4, 'error') || {}).m || ''), last(r4, 'error'));
+    check('ruangan kelima dalam semenit dari alamat yang sama ditolak', !last(r4, 'room') && /Terlalu banyak ruangan/.test((last(r4, 'error') || {}).m || ''), last(r4, 'error'));
     r4.close();
     await sleep(200);
     const many = [];

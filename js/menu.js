@@ -182,10 +182,10 @@
         break;
       case 'left':
         if (playing) {
-          // tak ada lagi lawan yang masih bermain → menang; kalau masih ada, yang keluar dianggap menyerah (lihat net.js)
+          // yang keluar dianggap menyerah pada giliran pertama tanpa paketnya (lihat net.js) — termasuk bila ia lawan
+          // terakhir: kemenangan tetap diputuskan simulasi, sama di semua klien
           const s = g.s, pid = net.order.indexOf(d.slot);
-          if (!net.order.some((sl, i) => i !== net.pid && !net.gone[i] && !s.players[i].out)) endMp('Lawan keluar dari permainan.', true);
-          else if (pid >= 0 && !s.players[pid].out) BF.hud.toast(`${s.players[pid].name} (${BF.SLOTS[pid].label}) keluar dari permainan.`);
+          if (pid >= 0 && !s.players[pid].out) BF.hud.toast(`${s.players[pid].name} (${BF.SLOTS[pid].label}) keluar dari permainan.`);
         } else if (menu.inLobby) {
           if (d.closed) { mpReset('Tuan rumah keluar. Ruangan ditutup.', true); break; }
           delete menu.peers[d.slot];
@@ -204,6 +204,19 @@
       case 'desync':
         BF.hud.toast('Peringatan: permainan tidak sinkron dengan lawan');
         break;
+      // sambung ulang (lihat net.js): keterangan menunggu ditampilkan oleh HUD; di sini hanya pemberitahuan sekilas
+      case 'lost':
+        if (playing) BF.hud.toast('Koneksi terputus — menyambung ulang…');
+        break;
+      case 'regained':
+        if (playing) BF.hud.toast('Tersambung lagi.');
+        break;
+      case 'away':
+      case 'back': {
+        const pid = net.order.indexOf(d);
+        if (playing && pid >= 0 && !g.s.players[pid].out) BF.hud.toast(`${g.s.players[pid].name} (${BF.SLOTS[pid].label}) ${type === 'away' ? 'terputus — menunggu ia tersambung lagi' : 'tersambung lagi'}.`);
+        break;
+      }
     }
   }
 

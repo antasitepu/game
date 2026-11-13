@@ -378,7 +378,10 @@
           hud.showEnd(s, e.resigned ? me : undefined);
         }
       }
-      else if (e.type === 'over') hud.showEnd(s, e.resigned);
+      else if (e.type === 'over') {
+        if (s.mp) BF.net.close();                           // permainan selesai: pamit, supaya server tidak menahan kursi kita
+        hud.showEnd(s, e.resigned);
+      }
     }
     s.events.length = 0;
   }
@@ -480,7 +483,7 @@
     const win = s.winner === s.human, lost = !win && s.players[s.human].out && s.players.some(p => !p.out), none = s.winner < 0 && !lost;
     $('end-title').textContent = none ? 'Permainan Berakhir' : win ? 'Kemenangan!' : 'Kekalahan';
     $('end-title').className = none ? 'draw' : win ? 'win' : 'lose';
-    $('end-text').textContent = hud.endNote || (resigned !== undefined ? (resigned === s.human ? 'Kamu menyerah.' : 'Lawan menyerah.')
+    $('end-text').textContent = hud.endNote || (resigned !== undefined ? (resigned === s.human ? 'Kamu menyerah.' : s.mp && BF.net.quit === resigned ? 'Lawan keluar dari permainan.' : 'Lawan menyerah.')
       : win ? 'Seluruh bangunan musuh telah runtuh.' : 'Permukiman kita telah jatuh.');
     endStats(s);
     $('overlay-end').classList.remove('hidden');
@@ -511,8 +514,15 @@
     if (now >= hud.infoAt) { hud.infoAt = now + 250; renderInfo(s); }
 
     // Multiplayer: tampilkan "menunggu" hanya bila macet lebih dari setengah detik.
-    if (!BF.net.waiting) hud.waitSince = 0; else if (!hud.waitSince) hud.waitSince = now;
-    $('net-wait').classList.toggle('hidden', !(hud.waitSince && now - hud.waitSince > 500) || s.over);
+    // keterangan menunggu di permainan daring: koneksi kita sendiri putus, menunggu pemain yang terputus (dengan sisa
+    // waktunya), atau sekadar menunggu paket pemain lain
+    const net = BF.net, awayPid = net.active ? net.away.findIndex((t, pid) => t > 0 && !s.players[pid].out) : -1;
+    if (!net.waiting) hud.waitSince = 0; else if (!hud.waitSince) hud.waitSince = now;
+    const wait = net.lost ? 'Koneksi terputus — menyambung ulang…'
+      : awayPid >= 0 ? `Menunggu ${s.players[awayPid].name} tersambung lagi… (${Math.max(0, Math.ceil((net.away[awayPid] - Date.now()) / 1000))} dtk)`
+        : hud.waitSince && now - hud.waitSince > 500 ? 'Menunggu pemain lain…' : '';
+    if (hud.text.wait !== wait) { hud.text.wait = wait; if (wait) $('net-wait').textContent = wait; }
+    $('net-wait').classList.toggle('hidden', !wait || s.over);
   };
 
   hud.init = function () {

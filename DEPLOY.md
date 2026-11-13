@@ -77,6 +77,8 @@ tidak dibutuhkan dan tidak pernah disajikan).
 | `LOBBY_MS` | `1800000` | Ruangan yang tidak kunjung dimulai ditutup. |
 | `STALL_MS` | `30000` | Ruangan yang macet menunggu seorang pemain (tab disembunyikan, perangkat tertidur): pemain yang tertinggal diputus dan dianggap menyerah. |
 | `DEAD_MS` | `600000` | Ruangan bermain yang sunyi total dikosongkan. |
+| `RECONNECT_MS` | `30000` | Kursi pemain yang koneksinya putus di tengah permainan ditahan selama ini; pemain lain menunggu. Bila ia tidak kembali, ia dianggap menyerah. |
+| `LIVE_MS` | `12000` | Klien di permainan yang tidak mengirim apa pun (klien mengirim tanda hidup tiap 2,5 detik) dianggap putus — untuk sambungan seluler yang menggantung tanpa tertutup. |
 
 ## Pemantauan
 
@@ -102,6 +104,7 @@ belum didukung (ruangan ada di memori satu proses).
 
 ## Yang belum ada
 
-- Sambung ulang: pemain yang koneksinya putus dianggap menyerah.
+- Sambung ulang hanya menyelamatkan koneksi yang putus selagi halaman masih terbuka. Pemain yang memuat ulang halaman
+  atau menutup aplikasinya kehilangan keadaan permainannya dan dianggap keluar.
 - Menjalankan beberapa proses/mesin sekaligus.
 - Uji di jaringan nyata dengan latensi tinggi untuk 3–4 pemain.

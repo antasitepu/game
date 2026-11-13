@@ -17,7 +17,9 @@ const names = process.argv.slice(2).length ? process.argv.slice(2) : fs.readdirS
   const PORT = 8600 + (process.pid % 90);
   const srv = spawn(process.execPath, [path.join(root, 'server.js')], { env: Object.assign({}, process.env, { PORT: String(PORT), HOST: '127.0.0.1' }), stdio: 'ignore' });
   await sleep(700);
-  let pass = 0, fail = 0, port = 9400;
+  // Port CDP (satu per skenario, berurutan) diturunkan dari pid supaya dua run yang berjalan bersamaan — mis. dari dua
+  // sesi kerja di folder yang sama — tidak berebut port dan folder profil peramban. Bisa dipaksa lewat CDP_PORT.
+  let pass = 0, fail = 0, port = +process.env.CDP_PORT || 9400 + (process.pid % 40) * 14;
   for (const name of names) {
     console.log('\n## ' + name);
     const browser = await launch(out, port++);

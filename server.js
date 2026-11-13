@@ -33,6 +33,10 @@ const LOBBY_MS = num('LOBBY_MS', 30 * 60e3);                // ruangan yang tida
 const STALL_MS = num('STALL_MS', 30e3);                     // ruangan yang macet menunggu satu pemain (lihat sweep)
 const DEAD_MS = num('DEAD_MS', 10 * 60e3);                  // ruangan bermain yang sunyi total
 const MAX_BUFFER = 1 << 20;                                 // byte yang boleh menumpuk untuk klien yang tidak membaca
+// --- sambung ulang
+const RECONNECT_MS = num('RECONNECT_MS', 30e3);             // kursi pemain yang koneksinya putus ditahan selama ini
+const LIVE_MS = num('LIVE_MS', 12e3);                       // klien di permainan yang tidak bersuara sama sekali (ping pun tidak) dianggap putus
+const LOG_N = 64, LOG_BYTES = 64 * 1024;                    // paket giliran terakhir tiap kursi yang dicatat untuk dikirim ulang
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 // ---------------------------------------------------------------- file statis
@@ -161,27 +165,54 @@ function sendFrame(c, op, payload) {
 }
 const send = (c, obj) => sendFrame(c, 0x1, Buffer.from(JSON.stringify(obj)));
 
-// Ruangan: clients[slot] (slot 0 = tuan rumah). Di lobi (belum dikunci) ruangan milik tuan rumah: bila ia keluar, ruangan
-// ditutup untuk semua. Tamu yang keluar dari lobi, atau siapa pun yang keluar setelah permainan dimulai, hanya
-// mengosongkan slotnya; klien lain diberi tahu slot mana yang pergi dan ruangan bertahan sampai kosong.
-function leaveRoom(c) {
+// Ruangan: clients[slot] = koneksi yang sedang menduduki kursi (slot 0 = tuan rumah); seats[slot] = keadaan kursi yang
+// bertahan walau koneksinya berganti: kunci rahasia untuk sambung ulang, giliran terakhir yang dikirim (turn) dan
+// kapan (tTurn), waktu terputus (away), sudah keluar untuk selamanya (gone), dan catatan paket giliran terakhirnya.
+const newSeat = () => ({ key: crypto.randomBytes(16).toString('hex'), turn: -1, tTurn: Date.now(), away: 0, gone: false, log: [], bytes: 0 });
+
+// Kursi dikosongkan untuk selamanya: kuncinya hangus dan pemain lain diberi tahu ('left' → dianggap menyerah). Ruangan
+// dihapus bila tidak ada lagi klien maupun kursi yang masih ditunggu.
+function vacate(room, slot) {
+  const seat = room.seats[slot];
+  if (seat) { seat.gone = true; seat.away = 0; seat.key = null; }
+  const now = Date.now();
+  for (const q of room.seats) if (q) q.tTurn = now;        // yang lain baru saja berhenti menunggu dia: beri waktu melanjutkan
+  for (const o of room.clients) if (o) send(o, { t: 'left', slot });
+  if (!room.clients.some(Boolean) && !room.seats.some(q => q && q.away)) rooms.delete(room.code);
+}
+
+// Di lobi (belum dikunci) ruangan milik tuan rumah: bila ia keluar, ruangan ditutup untuk semua; tamu yang keluar hanya
+// mengosongkan kursinya. Setelah permainan dimulai: koneksi yang putus menahan kursinya selama RECONNECT_MS (pemain lain
+// diberi tahu 'away' dan menunggu) dan boleh kembali dengan kunci kursinya; `final` = keluar untuk selamanya (pamit
+// sengaja, dikeluarkan karena macet).
+function leaveRoom(c, final) {
   const room = c.room;
   if (!room) return;
   c.room = null;
   const slot = room.clients.indexOf(c);
-  if (!room.started && slot === 0) {
-    rooms.delete(room.code);
-    for (const o of room.clients) if (o && o !== c) { o.room = null; send(o, { t: 'left', slot: 0, closed: true }); }
+  if (slot < 0) return;
+  if (!room.started) {
+    if (slot === 0) {
+      rooms.delete(room.code);
+      for (const o of room.clients) if (o && o !== c) { o.room = null; send(o, { t: 'left', slot: 0, closed: true }); }
+      return;
+    }
+    room.clients[slot] = null;
+    room.seats[slot] = null;
+    for (const o of room.clients) if (o) send(o, { t: 'left', slot });
     return;
   }
   room.clients[slot] = null;
-  if (!room.clients.some(Boolean)) { rooms.delete(room.code); return; }
-  for (const o of room.clients) if (o) send(o, { t: 'left', slot });
+  const seat = room.seats[slot];
+  if (final || !seat || seat.gone) { vacate(room, slot); return; }
+  seat.away = Date.now();
+  for (const q of room.seats) if (q) q.tTurn = seat.away;      // semua berhenti menunggu dia: itu bukan "macet"
+  for (const o of room.clients) if (o) send(o, { t: 'away', slot, ms: RECONNECT_MS });
 }
 
-function drop(c) {
+function drop(c, final) {
   if (!conns.delete(c)) return;
-  leaveRoom(c);
+  leaveRoom(c, final);
   const r = ips.get(c.ip);
   if (r && --r.conns <= 0 && !r.rooms.length && !r.fails.length) ips.delete(c.ip);
   c.socket.destroy();
@@ -196,6 +227,12 @@ function newCode() {
   return null;
 }
 
+// Percobaan yang gagal (kode ruangan salah, kunci sambung ulang salah) dibatasi per koneksi dan per alamat.
+function failed(c, msg, code) {
+  if (++c.fails >= CONN_FAILS || !allow(ipOf(c.ip).fails, IP_FAILS)) { send(c, { t: 'error', m: 'Terlalu banyak percobaan. Coba lagi sebentar lagi.' }); setImmediate(drop, c); return; }
+  send(c, code ? { t: 'error', m: msg, code } : { t: 'error', m: msg });
+}
+
 function onMessage(c, text) {
   if (++c.count > RATE) { drop(c); return; }
   let m;
@@ -203,40 +240,77 @@ function onMessage(c, text) {
   if (!m || typeof m !== 'object') return;
   c.last = Date.now();
   const ver = typeof m.v === 'string' ? m.v.slice(0, 32) : '';
-  if (m.t === 'create') {
+  if (m.t === 'ping') send(c, { t: 'pong' });               // tanda hidup dari klien yang sedang bermain
+  else if (m.t === 'create') {
     if (c.room) return;
     if (!allow(ipOf(c.ip).rooms, IP_ROOMS)) { send(c, { t: 'error', m: 'Terlalu banyak ruangan dibuat dari jaringanmu. Coba lagi sebentar lagi.' }); return; }
     const code = rooms.size < MAX_ROOMS ? newCode() : null;
     if (!code) { send(c, { t: 'error', m: 'Server penuh, coba lagi nanti' }); return; }
-    c.room = { code, clients: [c].concat(new Array(ROOM_MAX - 1).fill(null)), started: false, v: ver, t0: Date.now() };
+    const seats = new Array(ROOM_MAX).fill(null);
+    seats[0] = newSeat();
+    c.room = { code, clients: [c].concat(new Array(ROOM_MAX - 1).fill(null)), seats, started: false, v: ver, t0: Date.now() };
     rooms.set(code, c.room);
-    send(c, { t: 'room', code, slot: 0 });
+    send(c, { t: 'room', code, slot: 0, key: seats[0].key });
   } else if (m.t === 'join') {
     if (c.room) return;
     const room = rooms.get(String(m.code || '').toUpperCase().slice(0, 8));
     const slot = room && !room.started ? room.clients.indexOf(null) : -1;
-    if (slot < 0) {
-      // menebak-nebak kode ruangan dibatasi per koneksi dan per alamat
-      if (++c.fails >= CONN_FAILS || !allow(ipOf(c.ip).fails, IP_FAILS)) { send(c, { t: 'error', m: 'Terlalu banyak percobaan. Coba lagi sebentar lagi.' }); setImmediate(drop, c); return; }
-      send(c, { t: 'error', m: 'Ruangan tidak ditemukan, sudah penuh, atau permainannya sudah dimulai' });
-      return;
-    }
+    if (slot < 0) { failed(c, 'Ruangan tidak ditemukan, sudah penuh, atau permainannya sudah dimulai'); return; }
     if (room.v !== ver) { send(c, { t: 'error', m: 'Versi permainan berbeda dengan tuan rumah. Muat ulang halaman ini (minta tuan rumah juga), lalu coba lagi.' }); return; }
     const here = [];
     room.clients.forEach((o, i) => { if (o) here.push(i); });
     room.clients[slot] = c;
+    room.seats[slot] = newSeat();
     c.room = room;
-    send(c, { t: 'joined', code: room.code, slot, here });
+    send(c, { t: 'joined', code: room.code, slot, here, key: room.seats[slot].key });
     for (const i of here) send(room.clients[i], { t: 'peer', slot });
+  } else if (m.t === 'rejoin') {
+    // kembali ke kursi sendiri setelah koneksi putus: kode ruangan + nomor kursi + kunci kursi
+    if (c.room) return;
+    const room = rooms.get(String(m.code || '').toUpperCase().slice(0, 8)), slot = m.slot | 0, key = typeof m.key === 'string' ? m.key : '';
+    const seat = room && room.started && slot >= 0 && slot < ROOM_MAX ? room.seats[slot] : null;
+    if (!seat || seat.gone || !seat.key || key.length !== seat.key.length || !crypto.timingSafeEqual(Buffer.from(key), Buffer.from(seat.key)) || room.v !== ver) {
+      failed(c, 'Tidak bisa tersambung lagi ke permainan itu.', 'rejoin');
+      return;
+    }
+    const old = room.clients[slot], now = Date.now();
+    if (old) { old.room = null; setImmediate(drop, old); }   // koneksi lama yang masih menggantung digantikan
+    room.clients[slot] = c;
+    c.room = room;
+    seat.away = 0;
+    for (const q of room.seats) if (q) q.tTurn = now;
+    const here = [], away = [], have = m.have && typeof m.have === 'object' ? m.have : {};
+    room.seats.forEach((q, i) => { if (!q || i === slot) return; if (room.clients[i]) here.push(i); else if (q.away) away.push(i); });
+    // got: giliran terakhir darinya yang sampai ke server — klien mengirim ulang paketnya sendiri sesudah itu
+    send(c, { t: 'rejoined', slot, got: seat.turn, here, away, ms: RECONNECT_MS });
+    // paket giliran pemain lain yang terlewat selama terputus, lalu kabar siapa yang sudah keluar untuk selamanya
+    room.seats.forEach((q, i) => {
+      if (!q || i === slot) return;
+      const from = Number.isInteger(have[i]) ? have[i] : -1;
+      for (const e of q.log) if (e.n > from) sendFrame(c, 0x1, Buffer.from('{"t":"msg","d":' + e.json + ',"from":' + i + '}'));
+    });
+    room.seats.forEach((q, i) => { if (q && q.gone && i !== slot) send(c, { t: 'left', slot: i }); });
+    for (const o of room.clients) if (o && o !== c) send(o, { t: 'back', slot });
+  } else if (m.t === 'bye') {
+    leaveRoom(c, true);                                     // pamit: tidak perlu ditunggu
   } else if (m.t === 'lock') {
     // tuan rumah memulai permainan: ruangan tidak menerima pemain baru lagi
-    if (c.room && c.room.clients[0] === c && !c.room.started) { c.room.started = true; for (const o of c.room.clients) if (o) o.turn = -1; }
+    const room = c.room;
+    if (room && room.clients[0] === c && !room.started) { room.started = true; for (const q of room.seats) if (q) { q.turn = -1; q.tTurn = c.last; } }
   } else if (m.t === 'msg') {
     // diteruskan ke semua klien lain; slot pengirim diisi server (tidak bisa dipalsukan klien)
     const room = c.room;
     if (!room || m.d === undefined) return;
-    const from = room.clients.indexOf(c);
-    if (m.d && m.d.k === 't' && Number.isInteger(m.d.n) && m.d.n > c.turn) c.turn = m.d.n;      // giliran terakhir yang dikirim (lihat sweep)
+    const from = room.clients.indexOf(c), seat = room.seats[from];
+    if (seat && room.started && m.d && m.d.k === 't' && Number.isInteger(m.d.n)) {
+      // paket giliran: catat nomor dan waktunya (lihat sweep) dan simpan untuk dikirim ulang ke pemain yang tersambung lagi
+      if (m.d.n > seat.turn) seat.turn = m.d.n;
+      seat.tTurn = c.last;
+      const json = JSON.stringify(m.d);
+      seat.log.push({ n: m.d.n, json });
+      seat.bytes += json.length;
+      while (seat.log.length > LOG_N || seat.bytes > LOG_BYTES) seat.bytes -= seat.log.shift().json.length;
+    }
     for (const o of room.clients) if (o && o !== c) send(o, { t: 'msg', d: m.d, from });
   }
 }
@@ -274,7 +348,7 @@ server.on('upgrade', (req, socket) => {
   const accept = crypto.createHash('sha1').update(key + WS_GUID).digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
   socket.setNoDelay(true);
-  const c = { socket, buf: Buffer.alloc(0), frag: null, room: null, alive: true, count: 0, ip, fails: 0, turn: -1, t0: Date.now(), last: Date.now() };
+  const c = { socket, buf: Buffer.alloc(0), frag: null, room: null, alive: true, count: 0, ip, fails: 0, t0: Date.now(), last: Date.now() };
   ipOf(ip).conns++;
   conns.add(c);
   socket.on('data', d => onData(c, d));
@@ -293,25 +367,36 @@ setInterval(() => {
 
 // Pembersihan berkala:
 //   - koneksi yang tidak masuk ruangan mana pun dalam IDLE_MS diputus;
+//   - klien di permainan yang tidak bersuara sama sekali selama LIVE_MS (klien mengirim ping tiap beberapa detik)
+//     dianggap putus: kursinya ditahan dan ia boleh menyambung ulang;
 //   - ruangan lobi yang tidak dimulai dalam LOBBY_MS ditutup;
-//   - ruangan yang sedang bermain tetapi sunyi selama STALL_MS berarti semua menunggu paket seorang pemain yang macet
-//     (tab disembunyikan, perangkat tertidur, sambungan menggantung): pemain yang giliran terkirimnya paling tertinggal
-//     diputus — klien lain lalu menganggapnya menyerah dan permainan berlanjut. Bila semuanya sama-sama diam sampai
-//     DEAD_MS (permainan sudah selesai atau ditinggalkan), ruangan dikosongkan.
+//   - kursi yang ditunggu lebih dari RECONNECT_MS dikosongkan untuk selamanya (pemain lain menganggapnya menyerah);
+//   - ruangan yang sedang bermain, semua pemainnya tersambung, tetapi tanpa paket giliran selama STALL_MS berarti
+//     semua menunggu seorang pemain yang macet (tab disembunyikan, perangkat tertidur): pemain yang giliran terkirimnya
+//     paling tertinggal dikeluarkan untuk selamanya. Bila semuanya sama-sama diam sampai DEAD_MS (permainan sudah
+//     selesai atau ditinggalkan), ruangan dikosongkan.
 function sweep() {
   const now = Date.now();
-  for (const c of conns) if (!c.room && now - c.last > IDLE_MS) drop(c);
+  for (const c of conns) {
+    if (!c.room) { if (now - c.last > IDLE_MS) drop(c); }
+    else if (c.room.started && now - c.last > LIVE_MS) drop(c);
+  }
   for (const room of [...rooms.values()]) {
     const cs = room.clients.filter(Boolean);
     if (!room.started) {
       if (now - room.t0 > LOBBY_MS) for (const o of cs) { send(o, { t: 'error', m: 'Ruangan ditutup karena terlalu lama menunggu.' }); drop(o); }
       continue;
     }
-    const quiet = now - Math.max(...cs.map(o => o.last));
+    room.seats.forEach((q, i) => { if (q && q.away && now - q.away > RECONNECT_MS) vacate(room, i); });
+    if (!rooms.has(room.code) || room.seats.some(q => q && q.away)) continue;
+    const live = [];
+    room.clients.forEach((o, i) => { if (o) live.push(i); });
+    if (!live.length) { rooms.delete(room.code); continue; }
+    const quiet = now - Math.max(...live.map(i => room.seats[i].tTurn));
     if (quiet < STALL_MS) continue;
-    const lo = Math.min(...cs.map(o => o.turn)), hi = Math.max(...cs.map(o => o.turn));
-    if (lo < hi) { for (const o of cs) if (o.turn === lo) drop(o); }
-    else if (quiet > DEAD_MS) for (const o of cs) drop(o);
+    const lo = Math.min(...live.map(i => room.seats[i].turn)), hi = Math.max(...live.map(i => room.seats[i].turn));
+    if (lo < hi) { for (const i of live) if (room.seats[i].turn === lo) drop(room.clients[i], true); }
+    else if (quiet > DEAD_MS) for (const i of live) drop(room.clients[i], true);
   }
   for (const [ip, r] of ips) {
     while (r.rooms.length && now - r.rooms[0] > 60e3) r.rooms.shift();
@@ -319,7 +404,7 @@ function sweep() {
     if (r.conns <= 0 && !r.rooms.length && !r.fails.length) ips.delete(ip);
   }
 }
-setInterval(sweep, Math.min(5000, Math.max(250, STALL_MS / 4))).unref();
+setInterval(sweep, Math.min(5000, Math.max(250, Math.min(STALL_MS, RECONNECT_MS, LIVE_MS) / 4))).unref();
 
 // Berhenti dengan rapi (SIGTERM dari pengelola proses saat deploy): tidak menerima koneksi baru, menutup yang ada.
 function shutdown() {

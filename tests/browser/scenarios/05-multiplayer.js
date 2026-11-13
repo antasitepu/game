@@ -169,6 +169,10 @@ module.exports = async ({ page, check, root }) => {
     check('mekanik baru: hash state tetap identik, tanpa desinkronisasi', nc.length >= 4 && nd.length === 0 && await a.ev(`!BF.net.desync`) && await b.ev(`!BF.net.desync`), { dibandingkan: nc.length, beda: nd.length });
 
     // ---- tamu keluar → tuan rumah menang
+    // (penunda kirim 300 ms di atas dilepas dulu: ia membuang pesan yang masih tertunda saat sambungan ditutup, termasuk
+    // pamit tamu — peramban sungguhan mengirim pesan yang sudah diantrekan sebelum menutup)
+    for (const p of [a, b]) await p.ev(`delete BF.net.ws.send`);
+    await sleep(400);
     await b.clickEl('#btn-menu');
     await sleep(100);
     await b.clickEl('#m-quit');
