@@ -1356,8 +1356,100 @@
     return (wcache[owner] = g);
   };
 
+  // ---- pekerja beranimasi: model berkerangka dari aset (BF.assets.model.pekerja) dengan klip diam, jalan, jalan_bawa,
+  // kerja, lempar, mati. Tiap unit punya tulang dan AnimationMixer sendiri; geometri, bahan, dan klip dipakai bersama.
+  // Tunik memakai salinan bahan per pemain yang dikalikan warna tim. Alat kerja dan bawaan adalah mesh kaku yang
+  // menempel pada tulang; geometrinya ditulis dalam ruang model (pose istirahat) dan dibawa ke ruang tulang oleh matriks
+  // ikat-balik tulang itu.
+  const WALK_RATE = 2;                                    // pengali kecepatan klip jalan (4 langkah per detik: berjalan bergegas)
+  let WK = null;
+  function workerKit() {
+    if (WK) return WK;
+    const m = BF.assets.model.pekerja, K = m.kerangka, at = name => K.tulang.findIndex(t => t.nama === name);
+    const rest = k => new THREE.Matrix4().copy(K.ibm[k]).invert(), P = k => new THREE.Vector3().setFromMatrixPosition(rest(k));
+    const mk = fn => { const b = new MB(); b.smooth = true; fn(b); return b.geometry('flat'); };
+    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.4, -0.2), 1.2);      // longgar: mencakup rebah saat mati
+    const hand = at('RightHand'), back = at('Spine1'), hp = P(hand), sh = P(at('LeftArm'));
+    const grip = new THREE.Vector3(0, 1, 0).transformDirection(rest(hand)).multiplyScalar(0.05).add(hp);      // kepalan: 5 cm dari pergelangan
+    const tool = mk(b => {                                // cangkul/kapak: gagang ke depan, bilah di ujungnya
+      b.pbr = [0.8, 0];
+      b.tube('flat', [grip.x, grip.y, grip.z - 0.07], [grip.x, grip.y + 0.02, grip.z + 0.3], 0.011, 0.011, 6, C('#7a5632'));
+      b.use(PLATE, () => b.box('flat', grip.x - 0.008, grip.y - 0.09, grip.z + 0.25, grip.x + 0.008, grip.y + 0.05, grip.z + 0.31, STEEL, 1, 1));
+    });
+    const packs = {};
+    for (const res of BF.RES) packs[res] = mk(b => {      // bawaan: ikatan kayu di bahu kiri, atau karung yang disandang di punggung
+      const x = sh.x * 0.9, y = sh.y + 0.075, z = sh.z - 0.01, col = C(BF.RES_COLOR[res]), sack = C('#b89e74').lerp(col, 0.45);
+      b.pbr = [0.9, 0];
+      if (res === 'wood') { for (const [dx, dy] of [[-0.03, 0], [0.03, 0], [0, 0.045]]) b.tube('flat', [x + dx, y + dy - 0.01, z - 0.13], [x + dx, y + dy - 0.01, z + 0.13], 0.03, 0.03, 7, mul(col, 0.9 + dy * 4)); return; }
+      b.ball('flat', sh.x * 0.35, sh.y - 0.085, sh.z - 0.098, 0.08, sack, 1, 1.05, 1.2, 0.75);                          // badan karung menempel di punggung
+      b.tube('flat', [sh.x * 0.5, sh.y - 0.01, sh.z - 0.08], [sh.x * 0.95, sh.y + 0.04, sh.z + 0.03], 0.032, 0.02, 6, mul(sack, 0.8));   // leher karung melewati bahu kiri
+      b.ball('flat', sh.x * 0.35, sh.y - 0.1, sh.z - 0.152, 0.034, col, 1, 1.4, 1.4, 0.4);                               // tanda warna sumber daya
+    });
+    return (WK = { m, K, hand, back, tool, packs, tunik: {} });
+  }
+
+  function workerUnit(owner) {
+    const k = workerKit(), m = k.m, group = new THREE.Group(), ud = group.userData;
+    let tunik = k.tunik[owner];
+    if (!tunik) { tunik = k.tunik[owner] = m.bahan[1].clone(); tunik.color = C(BF.SLOTS[owner].color); }
+    const { akar, skeleton } = BF.assets.kerangkaBaru(m), mesh = new THREE.SkinnedMesh(m.lod[0], [m.bahan[0], tunik]);
+    mesh.castShadow = true;
+    for (const b of akar) mesh.add(b);
+    mesh.bind(skeleton, new THREE.Matrix4());
+    group.add(mesh);
+    ud.type = 'worker';
+    ud.skeleton = skeleton;
+    ud.mixer = new THREE.AnimationMixer(mesh);
+    ud.act = {};
+    for (const n in m.klip) ud.act[n] = ud.mixer.clipAction(m.klip[n]);
+    for (const n of ['lempar', 'mati']) { ud.act[n].setLoop(THREE.LoopOnce, 1); ud.act[n].clampWhenFinished = true; }
+    ud.cur = null; ud.once = null; ud.lastT = null; ud.atk0 = 0;
+    const attach = (geo, bone) => {
+      const o = new THREE.Mesh(geo, BF.tex.mat.unit);
+      o.matrixAutoUpdate = false;
+      o.matrix.copy(k.K.ibm[bone]);
+      o.castShadow = true;
+      o.visible = false;
+      skeleton.bones[bone].add(o);
+      return o;
+    };
+    ud.extras = { tool: attach(k.tool, k.hand) };
+    for (const res of BF.RES) ud.extras['pack_' + res] = attach(k.packs[res], k.back);
+    return group;
+  }
+
+  // Animasi pekerja: pilih klip dari keadaan unit, bersilang-pudar saat berganti, lalu majukan mixer sebesar selisih
+  // waktu simulasi sejak panggilan terakhir (jadi ikut berhenti saat jeda dan ikut cepat pada kecepatan 2×).
+  function poseWorker(ud, st, a) {
+    // st.skip: detik yang dilompati pada panggilan pertama (jasad yang baru terlihat lama setelah unitnya tewas)
+    const A = ud.act, dt = ud.lastT === null ? st.skip || 0 : Math.min(0.1, Math.max(0, st.t - ud.lastT));
+    ud.lastT = st.t;
+    // lemparan tombak buruan: dipicu saat atk melonjak. Simulasi sudah melepas tombaknya pada saat itu, jadi klip
+    // dimulai dari detik pelepasan (0,4) — yang terlihat adalah ayunan lanjutannya.
+    if (!st.dead && a > ud.atk0 + 0.05 && !st.working) ud.once = 'lempar';
+    ud.atk0 = a;
+    let want = st.dead ? 'mati' : st.working ? 'kerja' : st.moving ? (st.carry > 0 ? 'jalan_bawa' : 'jalan') : 'diam';
+    if (ud.once) {
+      if (want !== 'diam' || (ud.cur === ud.once && !A[ud.once].isRunning())) ud.once = null;      // selesai, atau unit disuruh hal lain
+      else want = ud.once;
+    }
+    if (want !== ud.cur) {
+      const next = A[want], prev = ud.cur && A[ud.cur];
+      next.reset();
+      next.time = want === 'lempar' ? 0.4 : want === 'diam' || want === 'kerja' ? (st.id * 0.37) % next.getClip().duration : 0;      // tidak serempak antar-pekerja
+      next.play();
+      if (prev) prev.crossFadeTo(next, 0.15, false);
+      ud.cur = want;
+    }
+    A.jalan.timeScale = A.jalan_bawa.timeScale = WALK_RATE;
+    ud.mixer.update(dt);
+    ud.extras.tool.visible = !!st.working;
+    for (const res of BF.RES) ud.extras['pack_' + res].visible = !st.dead && !st.working && st.carry > 0 && st.carryType === res;
+  }
+
   // Objek unit: Group berisi SkinnedMesh + kerangkanya sendiri (geometri & material dipakai bersama antar-unit sejenis).
   models.unit = function (type, owner) {
+    if (type === 'worker' && BF.assets.model.pekerja && BF.assets.model.pekerja.klip) return workerUnit(owner);
     const d = unitDef(type, owner), group = new THREE.Group(), mat = BF.tex.mat.unit, ud = group.userData;
     ud.type = type;
     if (d.parts) {
@@ -1392,7 +1484,11 @@
   };
 
   // Lepaskan sumber daya GPU milik satu unit (tekstur tulang kerangkanya).
-  models.disposeUnit = function (group) { if (group.userData.skeleton) group.userData.skeleton.dispose(); };
+  models.disposeUnit = function (group) {
+    const ud = group.userData;
+    if (ud.mixer) { ud.mixer.stopAllAction(); ud.mixer.uncacheRoot(ud.mixer.getRoot()); }
+    if (ud.skeleton) ud.skeleton.dispose();
+  };
 
   // ---- animasi. Rotasi X positif mengayun anggota badan ke belakang; negatif ke depan.
   function poseHuman(B, st, type, a, mounted) {
@@ -1476,6 +1572,7 @@
   // Pose dari state simulasi. st: {t (detik), id, moving, working, atk (1 saat memukul → 0), carryType, carry}
   models.pose = function (group, st) {
     const ud = group.userData, type = ud.type, a = Math.min(1, Math.max(0, st.atk));
+    if (ud.mixer) { poseWorker(ud, st, a); return; }
     if (ud.parts) {                                                   // pelontar: lengan menyentak ke palang lalu ditarik kembali oleh kerekan
       const P = ud.parts;
       P.arm.rotation.x = ARM_REST + ARM_FIRE * a * a * (3 - 2 * a);

@@ -55,4 +55,15 @@ module.exports = async ({ page, check }) => {
   check('setelah 90 dtk: rumah jadi, populasi 6/10, setoran berjalan', await p.ev(`(() => { const s = BF.game.s, q = s.players[0]; return s.buildings.some(b => b.type === 'house' && b.built) && q.popCap === 10 && q.pop === 6 && q.gathered > 0; })()`));
   if (tree) check('pekerja baru otomatis menebang', (await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.order.type === 'gather' && u.order.res === 'wood').length`)) >= 2);
   await p.shot('04-setelah-90-detik');
+
+  // pekerja beranimasi (model berkerangka dari aset): klip mengikuti keadaan unit — berjalan, bekerja, berjalan membawa hasil
+  const seen = new Set();
+  let rig = null;
+  for (let i = 0; i < 120 && !(seen.has('jalan') && seen.has('kerja') && seen.has('jalan_bawa')); i++) {
+    const r = await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.type === 'worker').map(u => { const g = BF.gfx.unitGroup(u.id), ud = g && g.userData; return ud && ud.mixer ? { cur: ud.cur, alat: ud.extras.tool.visible, bawa: ['food', 'wood', 'gold', 'stone'].some(k => ud.extras['pack_' + k].visible), kerja: u.working, carry: u.carry, tulang: ud.skeleton.bones.length } : null; })`);
+    for (const q of r) if (q) { seen.add(q.cur); rig = rig || q; if (q.cur === 'kerja' && !q.alat) seen.add('kerja-tanpa-alat'); if (q.cur === 'jalan_bawa' && !q.bawa) seen.add('bawa-tanpa-beban'); }
+    await p.sleep(250);
+  }
+  check('pekerja memakai model berkerangka 21 tulang', !!rig && rig.tulang === 21, rig);
+  check('klip pekerja mengikuti keadaan: jalan, kerja (alat di tangan), jalan membawa (beban tampak)', seen.has('jalan') && seen.has('kerja') && seen.has('jalan_bawa') && !seen.has('kerja-tanpa-alat') && !seen.has('bawa-tanpa-beban'), [...seen]);
 };

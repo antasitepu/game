@@ -170,6 +170,9 @@
   // Statistik render frame terakhir (untuk mengukur beban).
   gfx.info = () => ({ drawCalls: renderer.info.render.calls, segitiga: renderer.info.render.triangles, geometri: renderer.info.memory.geometries, tekstur: renderer.info.memory.textures });
 
+  // Objek tampilan sebuah unit (Group three.js) — untuk tes dan alat periksa.
+  gfx.unitGroup = id => { const o = W && W.units.get(id); return o ? o.group : null; };
+
   // Buang dunia yang sedang tampil; frame berikutnya membangunnya ulang dari state.
   gfx.reset = disposeWorld;
 
@@ -671,11 +674,12 @@
     return g;
   }
   function dropFx(m) {
+    if (m.userData.mixer) models.disposeUnit(m);
     if (m.userData.own) m.geometry.dispose();
     if (m.userData.ruin) for (const c of m.userData.ruin.mats) c.dispose();
   }
 
-  function syncEffects(s) {
+  function syncEffects(s, t) {
     const fog = s.fog, live = new Set();
     for (const e of s.effects) {
       const k = BF.clamp(e.t / e.life, 0, 1), seen = !!fog.explored[idx(BF.clamp(e.x | 0, 0, N - 1), BF.clamp(e.y | 0, 0, N - 1))];
@@ -687,17 +691,20 @@
           if (e.unit === 'catapult') m = models.catapultWreck(e.owner || 0).clone();            // bangkai: geometri bersama, jangan dibuang
           else if (e.bt && !B[e.bt].barrier) m = makeRuin(s, e);
           else if (e.type === 'rubble') m = models.rubble(e.size).clone();
+          else if (e.unit === 'worker') m = models.unit('worker', e.owner || 0);          // rebah dengan klip "mati" lalu diam
           else {
             m = new THREE.Mesh(models.corpse(e.owner || 0, e.big), M.flat);
             m.userData.own = true;
             m.castShadow = m.receiveShadow = true;
           }
           m.position.set(e.x, 0, e.y);
-          if (!m.userData.ruin) m.rotation.y = (hash((e.x * 31) | 0, (e.y * 17) | 0) % 628) / 100;
+          if (m.userData.mixer) { m.rotation.y = Math.PI / 2 - (e.dir || 0); models.pose(m, { t, id: 0, dead: true, atk: 0, skip: e.t }); }      // menghadap arah unit saat tewas
+          else if (!m.userData.ruin) m.rotation.y = (hash((e.x * 31) | 0, (e.y * 17) | 0) % 628) / 100;
           W.root.add(m);
           W.fxMap.set(e, m);
         }
         m.position.y = BF.relief.at(e.x, e.y) - Math.pow(Math.max(0, k - 0.7) / 0.3, 2) * (e.type === 'death' ? 0.3 : 0.5);      // tenggelam perlahan di akhir
+        if (m.userData.mixer && e.t < 2.5) models.pose(m, { t, id: 0, dead: true, atk: 0 });
         if (m.userData.ruin) m.userData.ruin.plane.constant = m.userData.ruin.h + m.position.y;
       } else if (e.type === 'boom') {
         // hantaman batu / bangunan runtuh: cincin debu yang mengembang dan membumbung, serpihan batu & kayu terlempar melengkung
@@ -860,7 +867,7 @@
     syncUnits(s, t, me, v.alpha, dt, sel);
     syncAnimals(s, t, v.alpha, dt, sel);
     syncProjectiles(s);
-    syncEffects(s);
+    syncEffects(s, t);
     syncMarkers(s, t, me, v.ui, sel);
     tex.ripple.offset.set(now * 0.000012, now * 0.000008);
 

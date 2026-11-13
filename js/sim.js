@@ -192,7 +192,7 @@
     if (t.kind === 'unit') {
       p.pop -= p.U[t.type].pop;
       const cls = p.U[t.type].cls;
-      s.effects.push({ type: 'death', x: t.x, y: t.y, t: 0, life: 7, owner: t.owner, big: cls === 'cavalry' || cls === 'siege', unit: t.type });
+      s.effects.push({ type: 'death', x: t.x, y: t.y, t: 0, life: 7, owner: t.owner, big: cls === 'cavalry' || cls === 'siege', unit: t.type, dir: t.dir });
       emit(s, { type: 'death', x: t.x, y: t.y });
     } else {
       const map = s.map, d = p.B[t.type];
