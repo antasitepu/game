@@ -296,8 +296,8 @@ BF.TECHS = {
   },
 };
 
-// smart: kecerdasan AI — 0 = dasar; 1 = mundur saat kalah jumlah, berburu babi hutan berkelompok, berdagang di pasar;
-// 2 = juga menyerang dari dua arah.
+// smart: kecerdasan AI — 0 = dasar; 1 = mundur saat kalah jumlah, berburu babi hutan berkelompok, berdagang di pasar,
+// berangkat menyerang dalam formasi; 2 = juga menyerang dari dua arah.
 BF.DIFF = {
   easy: { label: 'Mudah', think: 40, firstAttack: 10 * 60 * 20, firstWave: 4, waveGrow: 2, maxWave: 12, maxArmy: 14, maxWorkers: [9, 13, 16], eraWorkers: [9, 13], towers: 0, techs: 2, smart: 0 },
   normal: { label: 'Sedang', think: 20, firstAttack: 7 * 60 * 20, firstWave: 6, waveGrow: 3, maxWave: 22, maxArmy: 26, maxWorkers: [12, 18, 24], eraWorkers: [11, 16], towers: 1, techs: 6, smart: 1 },

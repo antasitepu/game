@@ -414,6 +414,33 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   run(s, 20 * 4);
   check('AI Sedang menyerang tanpa mengapit', q.ai.state === 'attack' && !q.ai.flank);
 
+  // formasi: gelombang AI Sedang/Sulit berbaris dulu di titik siap di depan sasaran, lalu menyerbu; AI Mudah langsung maju
+  const wave = diff => {
+    const s = mk(diff), q = s.players[1], th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+    q.era = 2;
+    const army = ring(s, th.tx + 1, th.ty + 5, 'spear', 1, 4).concat(ring(s, th.tx + 1, th.ty + 7, 'archer', 1, 3), ring(s, th.tx + 1, th.ty + 8, 'catapult', 1, 1));
+    q.ai = AI0(8, 8);
+    run(s, BF.DIFF[diff].think + 2);
+    const tgt = s.byId.get(q.ai.target), tx = tgt.tx + tgt.size / 2, ty = tgt.ty + tgt.size / 2;
+    return { s, army, tgt, slow: Math.min(...army.map(u => BF.unitDef(s, u).speed)), jarak: army.map(u => +BF.dist(u.order.x - tx, u.order.y - ty).toFixed(1)) };
+  };
+  let w = wave('normal');
+  check('AI Sedang berangkat menyerang dalam formasi (laju unit paling lambat, arah hadap sama)', w.army.every(u => u.order.type === 'amove' && u.order.pace === w.slow && u.order.face === w.army[0].order.face) && w.slow < BF.unitDef(w.s, w.army[0]).speed, { laju: w.army.map(u => u.order.pace), jenis: w.army.map(u => u.order.type) });
+  check('barisan dibentuk di titik siap di depan sasaran, bukan di atas sasaran', w.jarak.every(d => d > 4 && d < 11), w.jarak);
+  {
+    // petarung jarak dekat ditempatkan di depan pemanah, pelontar paling belakang (diukur sepanjang arah maju)
+    const f = w.army[0].order.face, along = u => u.order.x * Math.cos(f) + u.order.y * Math.sin(f), of = t => w.army.filter(u => u.type === t).map(along);
+    check('formasi AI: tombak di depan, pemanah di tengah, pelontar di belakang', Math.min(...of('spear')) > Math.max(...of('archer')) && Math.min(...of('archer')) > Math.max(...of('catapult')), { tombak: of('spear').map(v => +v.toFixed(1)), pemanah: of('archer').map(v => +v.toFixed(1)), pelontar: of('catapult').map(v => +v.toFixed(1)) });
+  }
+  {
+    const hp0 = w.tgt.hp;
+    let k = 0;
+    for (; k < 20 * 150 && !w.tgt.dead && w.tgt.hp >= hp0; k++) { BF.step(w.s); w.s.events.length = 0; }
+    check('setelah berbaris, pasukan AI menyerbu dan memukul sasaran', w.tgt.dead || w.tgt.hp < hp0, { detik: (k / 20).toFixed(0), jenis: w.army.map(u => u.order.type) });
+  }
+  w = wave('easy');
+  check('AI Mudah langsung menuju sasaran tanpa formasi', w.army.every(u => u.order.type === 'amove' && !u.order.pace) && w.jarak.every(d => d < 4), { laju: w.army.map(u => u.order.pace), jarak: w.jarak });
+
   // babi hutan: diburu berempat sekaligus, tanpa korban
   s = mk('normal'); q = s.players[1]; th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall');
   ring(s, th.tx + 1, th.ty + 4, 'worker', 1, 4);

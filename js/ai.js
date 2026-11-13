@@ -378,6 +378,18 @@
     }
     if (!t) return;
     const tx = t.kind === 'unit' ? t.x : t.tx + t.size / 2, ty = t.kind === 'unit' ? t.y : t.ty + t.size / 2;
+    // Berangkat ke sasaran yang masih jauh (smart ≥ 1): pasukan lebih dulu berbaris di titik siap ±7 tile di depan sasaran —
+    // formasi Baris menghadap sasaran (petarung di depan, pemanah dan mesin kepung di belakang), semuanya secepat unit
+    // paling lambat sehingga tiba bersamaan. Yang sudah berdiri di barisannya (menganggur) disuruh menyerbu pada giliran
+    // berpikir berikutnya, lewat perintah untuk unit menganggur di bawah.
+    const march = list => {
+      const vx = tx - mx, vy = ty - my, l = dist(vx, vy);
+      if (diff.smart && list.length > 1 && l > 14) {
+        const f = BF.findFreeNear(s.map, (tx - vx / l * 7) | 0, (ty - vy / l * 7) | 0, 4, p.id);
+        if (f && s.map.region[idx(f.x, f.y)] === c.region) { BF.cmd.move(s, list, f.x + 0.5, f.y + 0.5, true, 1); return; }
+      }
+      if (list.length) BF.cmd.move(s, list, tx, ty, true);
+    };
     if (ai.wantFlank && t.kind === 'building') {
       // titik apit: 11 tile ke samping sasaran (sisi bergantian tiap gelombang), sedikit ke arah markas sendiri
       ai.wantFlank = false;
@@ -389,13 +401,14 @@
       if (f && s.map.region[idx(f.x, f.y)] === c.region && ids.length >= 3) {
         ai.flank = { ids, x: f.x + 0.5, y: f.y + 0.5, t0: s.tick, go: false };
         BF.cmd.move(s, army.filter(u => ids.indexOf(u.id) >= 0), ai.flank.x, ai.flank.y, true);
-        BF.cmd.move(s, army.filter(u => ids.indexOf(u.id) < 0 && u.order.type !== 'attack'), tx, ty, true);
+        march(army.filter(u => ids.indexOf(u.id) < 0 && u.order.type !== 'attack'));
         return;
       }
     }
     if (surge && wing.length) BF.cmd.move(s, wing.filter(u => u.order.type !== 'attack'), tx, ty, true);     // pengapit menyerbu
     const list = core.filter(u => (fresh ? u.order.type !== 'attack' : u.order.type === 'idle'));
-    if (list.length) BF.cmd.move(s, list, tx, ty, true);
+    if (fresh) march(list);
+    else if (list.length) BF.cmd.move(s, list, tx, ty, true);
   }
 
   BF.aiThink = function (s, p) {
