@@ -414,11 +414,12 @@ class Tokoh:
             elips(bm, S + d * 0.025 + w * 0.006, (0.086, 0.074, 0.094), sumbu=(Y, w, d))
         self.tambah('mantel', bm, bhn, lebur=(0.008, segitiga, 0.022))
 
-    def selempang(self, bhn, lebar=0.07, tim=True):
-        """Selempang kain melingkar serong dari pinggul kiri ke bahu kanan, menempel di badan telanjang."""
+    def selempang(self, bhn, lebar=0.07, tim=True, longgar=0.012, nama='selempang'):
+        """Selempang kain melingkar serong dari pinggul kiri ke bahu kanan; longgar = jarak dari badan telanjang
+        (lebih besar bila dipakai di atas baju)."""
         zs, rxs, rys = [r[0] for r in self.DADA], [r[1] for r in self.DADA], [r[2] for r in self.DADA]
         N, bm, cincin = 28, bmesh.new(), []
-        pusat = lambda a: (lambda z: Vector(((float(np.interp(z, zs, rxs)) + 0.012) * math.cos(a), (float(np.interp(z, zs, rys)) + 0.012) * math.sin(a), z)))(1.225 - 0.180 * math.cos(a))
+        pusat = lambda a: (lambda z: Vector(((float(np.interp(z, zs, rxs)) + longgar) * math.cos(a), (float(np.interp(z, zs, rys)) + longgar) * math.sin(a), z)))(1.225 - 0.180 * math.cos(a))
         for i in range(N):
             a = 2 * math.pi * i / N
             pt, t = pusat(a), (pusat(a + 0.05) - pusat(a - 0.05)).normalized()
@@ -428,7 +429,27 @@ class Tokoh:
         for i in range(N):
             for j in range(4):
                 bm.faces.new((cincin[i][j], cincin[i][(j + 1) % 4], cincin[(i + 1) % N][(j + 1) % 4], cincin[(i + 1) % N][j]))
-        self.tambah('selempang', bm, bhn, tim=tim)
+        self.tambah(nama, bm, bhn, tim=tim)
+
+    def tongkat(self, kayu, labu=None, bawah=None, atas=0.42):
+        """Tongkat di tangan kanan sepanjang sumbu depan-belakang (ujung atas di depan); genggaman `bawah` m dari pangkal.
+        labu: bahan labu obat yang terikat di dekat ujung atas."""
+        g, bawah = self.genggam(-1) - self.LENGAN[-1][2] * 0.012, bawah or TONGKAT
+        bm = bmesh.new()
+        tabung(bm, [(g + Y * bawah, 0.014, 0.014), (g - Y * atas, 0.018, 0.018)], u=X, w=Z, seg=6)
+        self.tambah('tongkat', bm, kayu, kaku='RightHand')
+        if labu:
+            bm = bmesh.new()
+            elips(bm, g - Y * (atas - 0.10) + X * 0.045, (0.040, 0.046, 0.040), seg=8, ring=6)
+            elips(bm, g - Y * (atas - 0.03) + X * 0.040, (0.024, 0.030, 0.024), seg=8, ring=6)
+            self.tambah('labu', bm, labu, kaku='RightHand')
+
+    def tas(self, bhn, tali):
+        """Tas obat di pinggul kiri dengan tali serong ke bahu kanan (dipakai di atas baju)."""
+        bm = bmesh.new()
+        tabung(bm, [((0.232, -0.01, 1.03), 0.040, 0.075), ((0.246, -0.01, 0.97), 0.052, 0.085), ((0.250, -0.01, 0.87), 0.050, 0.080)], seg=8, n=4)
+        self.tambah('tas', bm, bhn, kaku='Hips', rata=True)
+        self.selempang(tali, lebar=0.028, tim=False, longgar=0.036, nama='tali_tas')
 
     def jambul(self, bhn, turun=0.0, tim=False, tinggi=1.0):
         """Sirip rambut/jambul di puncak kepala (turun = lebih rendah, untuk kepala tanpa helm)."""
@@ -700,7 +721,7 @@ class Tokoh:
     # ---- kerangka + gerak → GLB berkerangka
     # lapis luar meniru bobot lapis di baliknya supaya tidak saling menembus saat bergerak (lihat ikat)
     TIRU = (('tunik', 'celana', (0.90, 1.00)), ('rok', 'celana', (0.90, 1.00)), ('rok', 'paha', (0.90, 1.00)), ('sabuk', 'tunik', None), ('sabuk', 'rok', None),
-            ('gesper', 'tunik', None), ('gesper', 'rok', None), ('selempang', 'dada', None), ('mantel', 'dada', None),
+            ('gesper', 'tunik', None), ('gesper', 'rok', None), ('selempang', 'dada', None), ('mantel', 'dada', None), ('tali_tas', 'tunik', None),
             ('pelat_kakiL', 'sepatuL', None), ('pelat_kakiR', 'sepatuR', None))
 
     def gerakkan(self, klip, glb, tiru=None, lihat=None, tulang_lain=(), kelompok=None, peraga=None):
@@ -1461,6 +1482,51 @@ def gugur_kapak(P, p):
         P.tangan('Right', arah=bidik(K_DIAM[1], K_DIAM[2]).slerp(bidik((-0.45, -0.89, 0), (-0.89, 0.45, 0)), t))
         P.tangan('Left', arah=bidik(cermin(K_DIAM[1]), cermin(K_DIAM[2]), k=1).slerp(bidik((0.45, -0.89, 0), (0.89, 0.45, 0), k=1), t))
     P.campur(lambda P: siaga_kapak(P, 0.0), jatuh, naik(p, 0.0, 0.2))
+
+
+# ---------------------------------------------------------------- gerak: tabib (tongkat di tangan kanan)
+TONGKAT = 1.05                                              # jarak pangkal tongkat dari genggaman (m)
+
+
+def siaga_tongkat(P, p):
+    """Berdiri santai dengan tongkat tegak bertumpu di tanah."""
+    diam(P, p)
+    P.tangan('Right', genggam=(-0.30, -0.16, TONGKAT + 0.004), arah=Quaternion(X, rad(1.2 * math.sin(4 * math.pi * p + 0.7))) @ TEGAK)
+
+
+def jalan_tongkat(P, p):
+    c = langkah(P, p)
+    lengan(P, 'Left', 1, turun=38, ayun=22 * c + 2, tekuk=20 + 16 * max(0.0, -c) - 6 * max(0.0, c), putar=10)
+    P.tangan('Right', genggam=Vector((-0.31, -0.19 - 0.015 * c, TONGKAT + 0.10 - 0.05 - 0.017 * math.cos(4 * math.pi * (p - 0.05)))), arah=Quaternion(X, rad(6 + 2 * c)) @ TEGAK)
+
+
+def lari_tongkat(P, p):
+    a = derap(P, p)
+    lengan(P, 'Left', 1, turun=40, ayun=-8 - 34 * a, tekuk=88 + 12 * a, masuk=8, putar=18)
+    P.tangan('Right', genggam=Vector((-0.30, -0.24 - 0.03 * a, TONGKAT + 0.16 - 0.07 - 0.03 * math.cos(4 * math.pi * (p - 0.17)))), arah=Quaternion(X, rad(24 + 3 * a)) @ TEGAK)
+
+
+def sembuh(P, p):
+    """Menyembuhkan (berulang mulus): badan condong ke depan, telapak kiri terangkat ke arah depan dan bergerak melingkar
+    pelan, tongkat diangkat-turunkan seirama."""
+    s1, c1 = math.sin(2 * math.pi * p), math.cos(2 * math.pi * p)
+    P.telapak('Left', (0.01, -0.07, 0), 0, rad(6))
+    P.telapak('Right', (-0.02, 0.05, 0), 0, rad(-14))
+    P.pinggul((0, -0.02, -0.03 + 0.008 * s1), ('X', rad(6 + 2 * s1)))
+    P.fk('Spine', ('X', rad(4 + 1.5 * s1)))
+    P.fk('Spine1', ('X', rad(3 + 1.5 * s1)))
+    P.fk('Neck', ('X', rad(4)))
+    P.fk('Head', ('X', rad(6 + 3 * s1)))
+    P.tangan('Left', genggam=(0.16 + 0.05 * c1, -0.46, 1.36 + 0.06 * s1), arah=bidik((-1, 0, 0), (0, -0.25, 0.97), k=1))      # telapak menghadap depan, jari ke atas
+    P.tangan('Right', genggam=(-0.30, -0.20, TONGKAT + 0.06 + 0.05 * s1), arah=Quaternion(X, rad(8 + 4 * c1)) @ TEGAK)
+
+
+def gugur_tongkat(P, p):
+    """Rebah ke belakang; tongkat tergeletak di samping badan."""
+    def jatuh(P):
+        mati(P, p)
+        P.tangan('Right', arah=TEGAK.slerp(TOMBAK['rebah'], naik(p, 0.1, 0.8)))
+    P.campur(lambda P: siaga_tongkat(P, 0.0), jatuh, naik(p, 0.0, 0.2))
 
 
 # ---------------------------------------------------------------- pratinjau gerak

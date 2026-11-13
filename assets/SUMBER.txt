@@ -6,9 +6,9 @@ Tekstur (Poly Haven): forrest_ground_01, coast_sand_01, reed_roof_04, weathered_
                       roof_09, white_rough_plaster, roof_slates_03, farm_furrows
 Langit HDRI (Poly Haven): kloofendal_48d_partly_cloudy_puresky
 
-Unit pekerja, prajurit tombak, pendekar pedang, pengawal karang, pemanah, pemburu rimba, pengamuk, penunggang kuda,
-dan pemanah berkuda (m/pekerja.bin, m/tombak.bin, m/pedang.bin, m/pengawal.bin, m/pemanah.bin, m/pemburu.bin,
-m/pengamuk.bin, m/penunggang.bin, m/pemanah_kuda.bin beserta t/<unit>.jpg dan t/<unit>_orm.jpg bila ada logam): model,
+Unit pekerja, prajurit tombak, pendekar pedang, pengawal karang, pemanah, pemburu rimba, pengamuk, tabib, penunggang
+kuda, dan pemanah berkuda (m/pekerja.bin, m/tombak.bin, m/pedang.bin, m/pengawal.bin, m/pemanah.bin, m/pemburu.bin,
+m/pengamuk.bin, m/tabib.bin, m/penunggang.bin, m/pemanah_kuda.bin beserta t/<unit>.jpg dan t/<unit>_orm.jpg bila ada logam): model,
 kerangka, dan gerak (termasuk kudanya) dibuat sendiri oleh skrip tools/aset/blender/<unit>.py, manusia.py, dan kuda.py;
 teksturnya dari Poly Haven (CC0): rough_linen, hessian_230, reed_roof_04.
 

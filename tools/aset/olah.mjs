@@ -57,6 +57,7 @@ const RESEP = {
   pemanah: { jenis: 'kerangka', sumber: 'pemanah', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3200] },
   pemburu: { jenis: 'kerangka', sumber: 'pemburu', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
   pengamuk: { jenis: 'kerangka', sumber: 'pengamuk', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
+  tabib: { jenis: 'kerangka', sumber: 'tabib', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
   // Unit berkuda: kuda dan penunggang satu mesh dan satu kerangka (40 tulang); titik asal di tanah di bawah HorseRoot.
   penunggang: { jenis: 'kerangka', sumber: 'penunggang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
   pemanah_kuda: { jenis: 'kerangka', sumber: 'pemanah_kuda', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },

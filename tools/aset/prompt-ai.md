@@ -65,6 +65,7 @@ memakai `kuda.py` juga: kuda dan penunggang menjadi satu mesh dan satu kerangka 
 | `pemanah` | `pemanah.py` | diam, jalan, lari, serang (memanah; tali dilepas di 0,58 detik), mati |
 | `pemburu` | `pemburu.py` | sama dengan pemanah |
 | `pengamuk` | `pengamuk.py` | diam, jalan, lari, serang (dua hantaman kapak: 0,29 dan 0,46 detik), mati |
+| `tabib` | `tabib.py` | diam, jalan, lari, kerja (menyembuhkan; 1,4 detik, berulang), mati |
 | `penunggang` | `penunggang.py` + `kuda.py` | diam, jalan, lari (derap cepat), serang (tusukan dari pelana, kena di 0,35 detik), mati |
 | `pemanah_kuda` | `pemanah_kuda.py` + `kuda.py` | diam, jalan, lari, serang (memanah dari pelana, lepas di 0,58 detik), mati |
 
