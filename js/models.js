@@ -1359,13 +1359,14 @@
   // ---- unit beranimasi: model berkerangka dari aset (BF.assets.model.<nama>) dengan klip diam, jalan, lari, mati, dan
   // klip khusus tiap jenis (pekerja: jalan_bawa, kerja, lempar; prajurit: serang).
   // Laju tanah sebuah klip langkah di tempat (tile/detik pada kecepatan putar 1): kecepatan mundur ujung telapak kaki
-  // (tulang ToeBase) selama menapak. Kaki dianggap menapak saat tingginya dalam 0,012 dari titik terendah sepanjang
+  // (tulang ToeBase; untuk kuda: tulang kuku yang disebut di `names`) selama menapak. Kaki dianggap menapak saat tingginya dalam 0,012 dari titik terendah sepanjang
   // klip; pada klip lari ada fase melayang (tak ada kaki yang menapak) yang tidak dihitung. Unit yang bergerak secepat
   // ini tampak tidak meluncur.
-  function gaitSpeed(m, clip) {
+  function gaitSpeed(m, clip, names) {
     const { akar, skeleton } = BF.assets.kerangkaBaru(m), root = new THREE.Object3D(), v = new THREE.Vector3(), N = 120, pos = [];
     for (const b of akar) root.add(b);
-    const mixer = new THREE.AnimationMixer(root), feet = ['Left', 'Right'].map(sd => skeleton.bones.find(b => b.name === sd + 'ToeBase') || skeleton.bones.find(b => b.name === sd + 'Foot'));
+    const mixer = new THREE.AnimationMixer(root);
+    const feet = names ? names.map(n => skeleton.bones.find(b => b.name === n)) : ['Left', 'Right'].map(sd => skeleton.bones.find(b => b.name === sd + 'ToeBase') || skeleton.bones.find(b => b.name === sd + 'Foot'));
     mixer.clipAction(clip).play();
     for (let i = 0; i <= N; i++) {
       mixer.setTime(clip.duration * Math.min(i / N, 0.9999));
@@ -1376,9 +1377,11 @@
     mixer.uncacheRoot(root);
     skeleton.dispose();
     let low = Infinity, dz = 0, n = 0;
-    for (const q of pos) low = Math.min(low, q[0][0], q[1][0]);
+    for (const q of pos) for (const f of q) low = Math.min(low, f[0]);
     for (let i = 1; i <= N; i++) {
-      const y = k => (pos[i][k][0] + pos[i - 1][k][0]) / 2, k = y(0) <= y(1) ? 0 : 1;
+      const y = k => (pos[i][k][0] + pos[i - 1][k][0]) / 2;
+      let k = 0;
+      for (let j = 1; j < feet.length; j++) if (y(j) < y(k)) k = j;                    // kaki yang paling rendah = yang menapak
       if (y(k) > low + 0.012) continue;
       dz += pos[i - 1][k][1] - pos[i][k][1];
       n++;
@@ -1451,7 +1454,9 @@
 
   // Unit yang memakai model berkerangka dari aset (bila modelnya ada; kalau tidak, rig buatan kode di bawah tetap dipakai).
   // strike: klip sekali-main yang dipicu saat unit menyerang (pekerja: melempar tombak buruan). at: detik kena/lepas pada
-  // klip itu bila tidak bertepatan dengan tangan kanan paling terjulur (yang diukur otomatis).
+  // klip itu bila tidak bertepatan dengan tangan kanan paling terjulur (yang diukur otomatis). feet: tulang yang menapak
+  // tanah untuk mengukur laju klip (unit berkuda: keempat kuku). sphere: bola pembatas [x, y, z, r] bila lebih besar.
+  const HOOVES = ['HorseFrontL3', 'HorseFrontR3', 'HorseHindL3', 'HorseHindR3'], MOUNTED = [0, 0.6, 0.1, 2];
   const RIGGED = {
     worker: { model: 'pekerja', strike: 'lempar' },
     spear: { model: 'tombak', strike: 'serang' },
@@ -1460,6 +1465,8 @@
     archer: { model: 'pemanah', strike: 'serang', at: 0.58 },      // memanah: saat lepas, tangan kanan justru di belakang
     ranger: { model: 'pemburu', strike: 'serang', at: 0.58 },
     berserk: { model: 'pengamuk', strike: 'serang', at: 0.29 },      // dua hantaman beruntun: kapak kanan 0,29 s, kiri 0,46 s
+    rider: { model: 'penunggang', strike: 'serang', at: 0.35, feet: HOOVES, sphere: MOUNTED },         // kuda + penunggang satu kerangka
+    harcher: { model: 'pemanah_kuda', strike: 'serang', at: 0.58, feet: HOOVES, sphere: MOUNTED },
   };
   const kits = {};
   function rigKit(type) {
@@ -1467,10 +1474,11 @@
     const R = RIGGED[type], m = R && BF.assets.model[R.model];
     if (!m || !m.klip || !m.klip.diam || !m.klip.jalan || !m.klip.mati) return (kits[type] = null);
     const K = m.kerangka, at = name => K.tulang.findIndex(t => t.nama === name);
-    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.4, -0.2), 1.3);      // longgar: mencakup senjata dan rebah saat mati
+    const sp = R.sphere || [0, 0.4, -0.2, 1.3];
+    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(sp[0], sp[1], sp[2]), sp[3]);      // longgar: mencakup senjata dan rebah saat mati
     // klip bergerak: `lari` / `lari_bawa` dari aset bila ada, kalau tidak diturunkan dari klip jalan; laju tanahnya
     // diukur supaya kecepatan putar klip bisa disamakan dengan kecepatan gerak unit (kaki tidak meluncur)
-    const lari = m.klip.lari || runClip(m, m.klip.jalan, 'lari'), gerak = { lari: { clip: lari, laju: gaitSpeed(m, lari) } };
+    const lari = m.klip.lari || runClip(m, m.klip.jalan, 'lari'), gerak = { lari: { clip: lari, laju: gaitSpeed(m, lari, R.feet) } };
     if (m.klip.jalan_bawa) {
       const bawa = m.klip.lari_bawa || (m.klip.lari ? carryClip(lari, m.klip.jalan_bawa, 'lari_bawa') : runClip(m, m.klip.jalan_bawa, 'lari_bawa'));
       gerak.lari_bawa = { clip: bawa, laju: gaitSpeed(m, bawa) };
