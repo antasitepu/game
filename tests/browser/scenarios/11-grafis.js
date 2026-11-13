@@ -18,6 +18,12 @@ module.exports = async ({ page, check }) => {
   check('Tinggi: ±60 gambar per detik, simulasi 20 tick per detik', l.fps > 45 && l.tps > 17 && l.tps < 23, l);
   await p.shot('80-grafis-tinggi');
 
+  // tingkat rinci model unit mengikuti jarak kamera: penuh saat dekat, ±45% pada jarak bermain, ±20% saat jauh
+  const tingkat = async zoom => { await p.ev(`BF.game.cam.zoom = ${zoom}`); await p.sleep(250); return p.ev(`(() => { const s = BF.game.s, w = s.units.find(u => u.owner === 0 && u.type === 'worker'), g = BF.gfx.unitGroup(w.id); return BF.assets.model.pekerja.lod.indexOf(g.children[0].geometry); })()`); };
+  const lodTinggi = [await tingkat(9), await tingkat(17), await tingkat(30)];
+  check('Tinggi: tingkat rinci unit 0 / 1 / 2 pada kamera dekat / biasa / jauh', lodTinggi.join() === '0,1,2' && await p.ev(`BF.assets.model.pekerja.lod.length === 3 && BF.assets.model.pekerja.lod[2].boundingSphere === BF.assets.model.pekerja.lod[0].boundingSphere`), lodTinggi);
+  await p.ev(`BF.game.cam.zoom = BF.view.ZOOM_DEFAULT`);
+
   await p.clickEl('#btn-menu');
   await p.sleep(200);
   check('Menu menampilkan pilihan grafis', (await p.ev(`document.getElementById('m-gfx').textContent`)) === 'Grafis: Tinggi');
@@ -29,6 +35,10 @@ module.exports = async ({ page, check }) => {
   i = await info(); l = await laju();
   check('Hemat: resolusi 1×, tanpa bayangan', i.mutu === 'hemat' && i.rasio === 1 && i.bayangan === false, i);
   check('Hemat: ±30 gambar per detik, simulasi tetap 20 tick per detik', l.fps > 22 && l.fps < 36 && l.tps > 17 && l.tps < 23, l);
+  const lodHemat = [await tingkat(9), await tingkat(17), await tingkat(30)];
+  check('Hemat: tidak pernah memakai tingkat penuh (1 / 1 / 2)', lodHemat.join() === '1,1,2', lodHemat);
+  await p.ev(`BF.game.cam.zoom = BF.view.ZOOM_DEFAULT`);
+  await p.sleep(200);
   check('tanpa galat setelah beralih mutu', p.errors.length === 0, p.errors.slice(0, 3));
   await p.shot('81-grafis-hemat');
 

@@ -1478,8 +1478,8 @@
     const R = RIGGED[type], m = R && BF.assets.model[R.model];
     if (!m || !m.klip || !m.klip.diam || !m.klip.jalan || !m.klip.mati) return (kits[type] = null);
     const K = m.kerangka, at = name => K.tulang.findIndex(t => t.nama === name);
-    const sp = R.sphere || [0, 0.4, -0.2, 1.3];
-    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(sp[0], sp[1], sp[2]), sp[3]);      // longgar: mencakup senjata dan rebah saat mati
+    const sp = R.sphere || [0, 0.4, -0.2, 1.3], ball = new THREE.Sphere(new THREE.Vector3(sp[0], sp[1], sp[2]), sp[3]);
+    for (const g of m.lod) g.boundingSphere = ball;        // longgar: mencakup senjata dan rebah saat mati (semua tingkat rinci)
     // klip bergerak: `lari` / `lari_bawa` dari aset bila ada, kalau tidak diturunkan dari klip jalan; laju tanahnya
     // diukur supaya kecepatan putar klip bisa disamakan dengan kecepatan gerak unit (kaki tidak meluncur)
     const lari = m.klip.lari || runClip(m, m.klip.jalan, 'lari'), gerak = { lari: { clip: lari, laju: gaitSpeed(m, lari, R.feet) } };
@@ -1528,7 +1528,8 @@
     if (name in beastKits) return beastKits[name];
     const m = BF.assets.model[name], k = m && m.klip;
     if (!k || !k.diam || !k.jalan || !k.lari || !k.makan || !k.mati) return (beastKits[name] = null);
-    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.35, 0.05), 1);
+    const ball = new THREE.Sphere(new THREE.Vector3(0, 0.35, 0.05), 1);
+    for (const g of m.lod) g.boundingSphere = ball;
     const gerak = {};
     for (const n of ['jalan', 'lari']) gerak[n] = { clip: k[n], laju: (R.laju && R.laju[n]) || gaitSpeed(m, k[n], BEAST_HOOVES) };
     const strike = R.strike && k[R.strike] ? R.strike : null;
@@ -1621,6 +1622,15 @@
     A.lari.timeScale = BF.clamp(P.run / kit.gerak.lari.laju, 0.5, 2.6);
     ud.mixer.update(dt);
   }
+
+  // Tingkat rinci model berkerangka: 0 = penuh, 1 = ±45% segitiga, 2 = ±20% (kamera jauh). Kerangka, bahan, dan klip sama
+  // untuk semua tingkat; yang diganti hanya geometri SkinnedMesh-nya. Unit buatan kode tidak terpengaruh.
+  models.setLod = function (group, n) {
+    const ud = group.userData;
+    if (!ud.mixer) return;
+    const lods = ud.kit.m.lod, g = lods[Math.min(n, lods.length - 1)], mesh = group.children[0];
+    if (mesh.geometry !== g) mesh.geometry = g;
+  };
 
   // Objek unit: Group berisi SkinnedMesh + kerangkanya sendiri (geometri & material dipakai bersama antar-unit sejenis).
   // Untuk hewan liar, owner = varian.

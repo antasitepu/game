@@ -33,7 +33,13 @@
   // 'tinggi': resolusi layar penuh (sampai 2×), bayangan, 60 fps. 'hemat' (bawaan di perangkat sentuh): resolusi 1×,
   // tanpa bayangan, pemandangan satu tingkat lebih sederhana, dan digambar 30 kali per detik (lihat main.js) — untuk
   // ponsel, laptop yang panas, atau menghemat baterai. Pilihan disimpan di peramban.
-  const Q_KEY = 'bf.grafis', QUALITY = { tinggi: { dpr: 2, shadow: true, lod: 0, fps: 60 }, hemat: { dpr: 1, shadow: false, lod: 1, fps: 30 } };
+  // unit: tingkat rinci model unit terendah yang dipakai (lihat unitLod)
+  const Q_KEY = 'bf.grafis', QUALITY = { tinggi: { dpr: 2, shadow: true, lod: 0, fps: 60, unit: 0 }, hemat: { dpr: 1, shadow: false, lod: 1, fps: 30, unit: 1 } };
+  // Tingkat rinci unit & hewan menurut jarak kamera: penuh saat dekat, ±45% pada jarak bermain biasa (tak terbedakan di
+  // sana), ±20% hanya saat kamera jauh (detail tipis seperti mata tombak hilang bila dipakai dari dekat). Mode Hemat
+  // tidak pernah memakai tingkat penuh.
+  let uLod = 0;                                // tingkat rinci unit untuk frame yang sedang digambar
+  const unitLod = zoom => Math.max(QUALITY[gfx.quality].unit, zoom <= LOD_ZOOM[0] ? 0 : zoom <= LOD_ZOOM[1] ? 1 : 2);
   let lastSize = null;
   gfx.QUALITY = QUALITY;
   gfx.quality = (() => {
@@ -571,6 +577,7 @@
       o.yaw += dy * Math.min(1, dt * 12);
       o.group.rotation.y = o.yaw;
       o.group.position.y = BF.relief.at(x, y);
+      models.setLod(o.group, uLod);
       models.pose(o.group, { t, id: u.id, moving: u.moving, working: u.working, atk: Math.max(0, u.atkAnim) / 0.3, carry: u.carry, carryType: u.carryType, speed: Math.min(BF.unitDef(s, u).speed, u.order.pace || Infinity) });
       if (sel.has(u.id)) {
         const r = take('ring' + (u.owner === me ? 0 : 1), () => new THREE.Mesh(gfx.ringGeo, M.ring[u.owner === me ? 0 : 1])), rad = U[u.type].radius + 0.2;
@@ -606,6 +613,7 @@
       o.group.position.set(x, BF.relief.at(x, y), y);
       o.group.rotation.y = o.yaw;
       o.group.scale.setScalar(carcass ? 0.7 + 0.3 * a.food / BF.ANIMALS[a.type].food : 1);
+      models.setLod(o.group, uLod);
       models.pose(o.group, { t, id: a.id, moving: a.moving, run: a.state === 'flee' || a.state === 'charge', graze: a.state === 'graze', carcass, charge: a.state === 'charge', atk: Math.max(0, a.atkAnim || 0) / 0.3 });
       if (sel.has(a.id)) {
         const r = take('ring2', () => new THREE.Mesh(gfx.ringGeo, M.ring[2]));
@@ -723,7 +731,7 @@
             m.castShadow = m.receiveShadow = true;
           }
           m.position.set(e.x, 0, e.y);
-          if (m.userData.mixer) { m.rotation.y = Math.PI / 2 - (e.dir || 0); models.pose(m, { t, id: 0, dead: true, atk: 0, skip: e.t }); }      // menghadap arah unit saat tewas
+          if (m.userData.mixer) { m.rotation.y = Math.PI / 2 - (e.dir || 0); models.setLod(m, uLod); models.pose(m, { t, id: 0, dead: true, atk: 0, skip: e.t }); }      // menghadap arah unit saat tewas
           else if (!m.userData.ruin) m.rotation.y = (hash((e.x * 31) | 0, (e.y * 17) | 0) % 628) / 100;
           W.root.add(m);
           W.fxMap.set(e, m);
@@ -886,6 +894,7 @@
       for (const m of W.inst) { m.geometry = m.userData.lods[Math.min(lod, m.userData.lods.length - 1)]; if (m.userData.decor) m.visible = lod < 2; }
     }
 
+    uLod = unitLod(cam.zoom);
     resetPools();
     syncFogAndNodes(s);
     syncBuildings(s, t, me);
