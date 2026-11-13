@@ -540,7 +540,16 @@
       if (Math.abs(d.x1 - d.x0) > 4 || Math.abs(d.y1 - d.y0) > 4) boxSelect(s, d, e.shiftKey);
       else clickSelect(s, d.x0, d.y0, e.shiftKey);
     });
-    document.addEventListener('mouseleave', () => { ui.mouse.inside = false; });
+    // Kursor keluar dari halaman lewat sebuah tepi: anggap ia menempel di tepi itu, supaya peta terus bergeser ke arah
+    // sana. Di jendela peramban tepi atas halaman berbatasan dengan bilah tab/alamat, bukan tepi layar, jadi tanpa ini
+    // geser ke atas nyaris mustahil. Berhenti begitu kursor masuk lagi atau jendela kehilangan fokus.
+    document.addEventListener('mouseleave', e => {
+      const m = ui.mouse, w = window.innerWidth, h = window.innerHeight;
+      m.x = BF.clamp(e.clientX, 0, w);
+      m.y = BF.clamp(e.clientY, 0, h);
+      m.inside = e.clientX <= 0 || e.clientY <= 0 || e.clientX >= w - 1 || e.clientY >= h - 1;
+      m.onMap = false;
+    });
     window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; ui.mouse.inside = false; rotating = null; });
     window.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('keydown', onKey);

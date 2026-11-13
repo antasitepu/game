@@ -215,4 +215,26 @@ module.exports = async ({ page, check }) => {
   await p.sleep(100);
   check('Home mengembalikan arah kamera', Math.abs((await p.ev(`BF.game.cam.yaw`)) - (await p.ev(`BF.view.YAW_DEFAULT`))) < 1e-6);
   await p.shot('05-kamera');
+
+  // geser tepi: kursor yang keluar dari halaman lewat sebuah tepi (di jendela peramban, tepi atas berbatasan dengan
+  // bilah tab) tetap menggeser peta ke arah itu sampai kursor masuk lagi
+  await p.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await p.ev(`(() => { const th = BF.game.s.buildings[0]; BF.ui.select([]); BF.input.centerOn(48, 48); })()`);
+  const tengah = () => p.ev(`(() => { BF.view.update(); return BF.view.toWorld(640, 300); })()`);
+  const geser = async aksi => { await p.ev(`BF.input.centerOn(48, 48)`); await p.sleep(120); const a = await tengah(); await aksi(); await p.sleep(450); const b = await tengah(); return { x: b.x - a.x, y: b.y - a.y }; };
+  const hold = (key, code, vk) => async () => { await p.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk }); await p.sleep(400); await p.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk }); };
+  const keluar = (x, y) => () => p.ev(`document.dispatchEvent(new MouseEvent('mouseleave', { clientX: ${x}, clientY: ${y} }))`);
+  await p.mouse('mouseMoved', 640, 300);
+  const atas = await geser(hold('ArrowUp', 'ArrowUp', 38)), kiri = await geser(hold('ArrowLeft', 'ArrowLeft', 37));
+  const kAtas = await geser(keluar(640, -6));
+  await p.mouse('mouseMoved', 640, 300);
+  const diam = await geser(async () => {});
+  const kKiri = await geser(keluar(-3, 300));
+  await p.mouse('mouseMoved', 640, 300);
+  const searah = (u, v) => (u.x * v.x + u.y * v.y) / (Math.hypot(u.x, u.y) * Math.hypot(v.x, v.y) || 1);
+  check('kursor keluar lewat tepi atas → peta tetap bergeser ke atas', Math.hypot(kAtas.x, kAtas.y) > 2 && searah(kAtas, atas) > 0.95, { panah: atas, keluar: kAtas });
+  check('kursor masuk lagi → berhenti bergeser', Math.hypot(diam.x, diam.y) < 0.2, diam);
+  check('kursor keluar lewat tepi kiri → peta bergeser ke kiri', Math.hypot(kKiri.x, kKiri.y) > 2 && searah(kKiri, kiri) > 0.95, { panah: kiri, keluar: kKiri });
+  const samping = await geser(keluar(640, 300));
+  check('keluar tanpa melewati tepi (jendela kehilangan kursor di tengah) tidak menggeser', Math.hypot(samping.x, samping.y) < 0.2, samping);
 };
