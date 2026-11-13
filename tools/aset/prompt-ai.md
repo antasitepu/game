@@ -10,14 +10,17 @@ dan sejenisnya) — langkah itu butuh akun Anda sendiri.
 1. Buat model dengan prompt di bawah. Bila generator menerima gambar, hasil "image to 3D" biasanya lebih baik
    daripada "text to 3D": buat dulu satu gambar konsep (tampak tiga-perempat dari atas, latar polos), lalu ubah ke 3D.
 2. Unduh sebagai **GLB** lengkap dengan tekstur (PBR bila tersedia). Jumlah poligon bebas — alat aset yang menyederhanakannya.
-3. Taruh filenya di `tools/aset/sumber/<nama>.glb` (misalnya `tools/aset/sumber/rumah.glb`).
-4. Periksa isinya: `node tools/aset/olah.mjs --info tools/aset/sumber/rumah.glb`
+3. Taruh filenya di `tools/aset/buatan/<nama>.glb` (misalnya `tools/aset/buatan/rumah.glb`). Folder itu ikut masuk
+   git, karena model buatan sendiri tidak bisa diunduh ulang seperti aset Poly Haven di `tools/aset/sumber/`.
+4. Periksa isinya: `node tools/aset/olah.mjs --info tools/aset/buatan/rumah.glb`
 5. Kabari saya; dari hasil 1–2 model itu kita nilai mutunya sebelum mengerjakan sisanya.
 
 Catatan lisensi: keluaran paket gratis umumnya berlisensi CC BY 4.0 (wajib mencantumkan atribusi) dan ada yang
 tidak mengizinkan pemakaian komersial. Baca ketentuan paket yang dipakai, dan catat sumbernya di `assets/SUMBER.txt`.
 
-## Tambahan yang dipakai di semua prompt
+## Tambahan yang dipakai di semua prompt bangunan
+
+Unit manusia memakai tambahannya sendiri (lihat bagian Unit); tambahan ini juga dipakai untuk `pelontar`.
 
 > single isolated object, centered, standing on flat ground, no base plate, no background, no people,
 > realistic proportions, weathered natural materials, photorealistic PBR textures, soft neutral daylight,
@@ -49,9 +52,9 @@ Unit butuh animasi (diam, jalan, bekerja, menyerang, mati). Alurnya (contoh untu
 folder proyek, butuh Blender):
 
 1. **Model** — buat dengan prompt di bawah (pose A, tangan kosong: senjata/alat dibuat terpisah dan ditempel ke tulang
-   tangan di game). Unduh GLB bertekstur ke `tools/aset/sumber/pekerja-ai.glb`.
+   tangan di game). Unduh GLB bertekstur ke `tools/aset/buatan/pekerja-ai.glb` (folder ini ikut masuk git).
 2. **Rapikan** — gabung mesh, sederhanakan, tegakkan, ekspor FBX untuk Mixamo + pratinjau depan/samping:
-   `blender -b --factory-startup --python tools/aset/blender/rapikan.py -- tools/aset/sumber/pekerja-ai.glb tools/aset/sumber/pekerja/pekerja-mixamo.fbx`
+   `blender -b --factory-startup --python tools/aset/blender/rapikan.py -- tools/aset/buatan/pekerja-ai.glb tools/aset/sumber/pekerja/pekerja-mixamo.fbx`
    Bila pratinjau "depan" memperlihatkan punggung/samping, ulangi dengan `--putar 180` (atau 90/−90).
 3. **Mixamo** (mixamo.com, akun Adobe) — unggah `pekerja-mixamo.fbx`, tandai titik dagu/pergelangan/siku/lutut/selangkangan.
    Unduh FBX: satu kali **With Skin** (pose T) disimpan sebagai `tools/aset/sumber/pekerja/mixamo/model.fbx`, lalu tiap
@@ -63,9 +66,22 @@ folder proyek, butuh Blender):
 
 Alat ini diuji ujung-ke-ujung dengan `node tools/aset/uji-kerangka.mjs` (model uji buatan Blender, tanpa akun apa pun).
 
+Unduhan Mixamo dan `pekerja.glb` hasil gabungannya sengaja berada di `tools/aset/sumber/` (tidak masuk git): repo ini
+publik, dan file animasi mentah Mixamo tidak boleh dibagikan ulang sebagai aset lepas. Cadangkan folder itu sendiri.
+
+Tambahan untuk prompt unit manusia (pengganti tambahan bangunan):
+
+> single full-body human character, standing upright in a symmetric A-pose, arms straight and held about 45 degrees
+> away from the body, legs slightly apart, empty hands, facing forward, plain light-grey background, soft even lighting,
+> no cast shadows, realistic proportions, photorealistic PBR textures
+
+Gaya bersama: *villager of a tropical island maritime trading people*. Bila layanannya punya pilihan pose A/T, aktifkan.
+Senjata, perisai, dan alat di tangan pada prompt di bawah dihapus dulu saat membuat model (dibuat terpisah). Pakaian
+yang nanti diwarnai sesuai tim diminta polos berwarna putih gading, supaya game bisa mewarnainya.
+
 | Nama file | Unit | Prompt |
 |---|---|---|
-| `pekerja` | Pekerja | A village labourer in a simple cotton tunic and loose trousers, wide conical straw hat, barefoot, carrying nothing, neutral A-pose |
+| `pekerja` | Pekerja | A village labourer in a plain undyed off-white cotton tunic reaching the hips and loose brown trousers, wide conical straw hat, barefoot, carrying nothing, neutral A-pose |
 | `tombak` | Prajurit Tombak | A foot soldier in quilted cloth armour and a simple iron helmet, round wooden shield on the left arm, long spear in the right hand, neutral A-pose |
 | `pedang` | Pendekar Pedang | A swordsman in lamellar armour of small iron plates over a padded coat, open-faced helmet, straight single-handed sword and oval shield, neutral A-pose |
 | `pemanah` | Pemanah | A light archer in a leather jerkin and cloth headwrap, quiver on the back, wooden longbow in the left hand, neutral A-pose |

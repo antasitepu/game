@@ -5,7 +5,8 @@
 //   node tools/aset/olah.mjs --info <file>   periksa isi sebuah .gltf/.glb (bagian, bahan, jumlah segitiga, ukuran)
 //
 // Sumber diunduh sekali ke tools/aset/sumber/ (boleh dihapus; akan diunduh ulang bila perlu). Butuh macOS (sips).
-// Variabel lingkungan SUMBER / KELUAR mengganti folder sumber / keluaran (dipakai tools/aset/uji-kerangka.mjs).
+// Model buatan sendiri yang tidak bisa diunduh ulang (mis. hasil generator AI) disimpan di tools/aset/buatan/ (ikut git).
+// Variabel lingkungan SUMBER / BUATAN / KELUAR mengganti folder-folder itu (dipakai tools/aset/uji-kerangka.mjs).
 // Satuan keluaran: 1 = 1 tile, Y ke atas, titik asal di kaki objek.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +17,7 @@ import * as I from './gambar.mjs';
 
 const DI_SINI = path.dirname(fileURLToPath(import.meta.url));
 const SUMBER = process.env.SUMBER || path.join(DI_SINI, 'sumber');
+const BUATAN = process.env.BUATAN || path.join(DI_SINI, 'buatan');
 const KELUAR = process.env.KELUAR ? path.resolve(process.env.KELUAR) : path.join(DI_SINI, '..', '..', 'assets');
 const UA = { 'User-Agent': 'asset-pipeline/1.0' };
 
@@ -45,7 +47,8 @@ const RESEP = {
   rumput1: { jenis: 'rumput', sumber: 'grass_medium_01', mesh: [9], tinggi: 0.14, bilah: 40, lebar: 0.014 },
   rumput2: { jenis: 'rumput', sumber: 'grass_medium_01', mesh: [4], tinggi: 0.24, bilah: 18, lebar: 0.012 },
   // Unit berkerangka & beranimasi: GLB sendiri (lokal) di sumber/<sumber>.glb, mis. model AI yang dirig & dianimasikan di
-  // Mixamo lalu digabung di Blender. Selama file itu belum ada, olah semua melewatinya. tinggi: puncak kepala unit buatan kode.
+  // Mixamo lalu digabung di Blender. File itu sengaja di sumber/ (tidak masuk git): isinya animasi mentah Mixamo, yang tidak
+  // boleh dibagikan ulang sebagai aset lepas. Selama belum ada, olah semua melewatinya. tinggi: puncak kepala unit buatan kode.
   pekerja: { jenis: 'kerangka', sumber: 'pekerja', lokal: true, tinggi: 0.86, tekstur: 512, lod: [3000] },
 };
 const TEKSTUR = {
@@ -86,8 +89,11 @@ async function daftarFile(nama) {
   return r.json();
 }
 async function sumberModel(nama) {
-  const dir = path.join(SUMBER, nama), f = path.join(dir, nama + '.gltf'), glb = path.join(SUMBER, nama + '.glb');
-  if (fs.existsSync(glb)) return glb;                    // model sendiri (mis. hasil generator AI): taruh sumber/<nama>.glb
+  const dir = path.join(SUMBER, nama), f = path.join(dir, nama + '.gltf');
+  for (const d of [BUATAN, SUMBER]) {                    // model sendiri (mis. hasil generator AI): taruh buatan/<nama>.glb
+    const glb = path.join(d, nama + '.glb');
+    if (fs.existsSync(glb)) return glb;
+  }
   if (!fs.existsSync(f)) {
     console.log('  mengunduh model ' + nama + ' …');
     const e = (await daftarFile(nama)).gltf['1k'].gltf;
