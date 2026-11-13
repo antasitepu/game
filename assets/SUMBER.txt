@@ -1,0 +1,10 @@
+Aset di folder ini dihasilkan oleh tools/aset/olah.mjs dari sumber berikut (semuanya lisensi CC0, polyhaven.com/license):
+
+Model (Poly Haven):   island_tree_01, island_tree_02, quiver_tree_02, searsia_lucida, rock_moss_set_01,
+                      namaqualand_boulder_03, grass_medium_01, modular_fort_01, wooden_barrels_01
+Tekstur (Poly Haven): forrest_ground_01, coast_sand_01, reed_roof_04, weathered_brown_planks, castle_wall_slates,
+                      roof_09, white_rough_plaster, roof_slates_03, farm_furrows
+Langit HDRI (Poly Haven): kloofendal_48d_partly_cloudy_puresky
+
+Bila nanti ditambah aset berlisensi CC BY (mis. hasil paket gratis generator AI), cantumkan nama dan pembuatnya di sini
+dan di layar Bantuan game — lisensi itu mewajibkan atribusi.

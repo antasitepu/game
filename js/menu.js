@@ -1,0 +1,272 @@
+'use strict';
+// Menu & overlay: layar awal (lawan AI / multiplayer), lobi, menu dalam permainan, simpan/muat.
+(function () {
+  const $ = id => document.getElementById(id);
+  const show = (id, on) => $(id).classList.toggle('hidden', !on);
+  const net = BF.net, audio = BF.audio;
+  const menu = BF.menu = { mode: 'ai', faction: 'samudra', foe: 'random', difficulty: 'normal', inLobby: false, peerHere: false, peer: null, wasPaused: false };
+  const game = () => BF.game;
+  const fkeys = Object.keys(BF.FACTIONS);
+
+  // ---------------------------------------------------------------- layar awal
+
+  function renderFactions() {
+    const box = $('factions');
+    box.textContent = '';
+    for (const k of fkeys) {
+      const f = BF.FACTIONS[k], b = document.createElement('button');
+      b.className = 'faction' + (k === menu.faction ? ' on' : '');
+      b.innerHTML = `<b>${f.name.replace('Wangsa ', '')}</b><small>${f.tag}</small>`;
+      b.addEventListener('click', () => {
+        menu.faction = k;
+        renderFactions();
+        if (menu.inLobby) { net.send({ k: 'hello', faction: k }); renderLobby(); }
+      });
+      box.appendChild(b);
+    }
+    const f = BF.FACTIONS[menu.faction];
+    $('faction-info').innerHTML = f.bonus.map(t => `<span>${t}</span>`).join('');
+  }
+
+  function setMode(mode) {
+    menu.mode = mode;
+    for (const b of $('mode-tabs').children) b.classList.toggle('on', b.dataset.mode === mode);
+    show('panel-ai', mode === 'ai');
+    show('panel-mp', mode === 'mp');
+    if (mode === 'ai' && (net.ws || menu.inLobby)) mpReset('');
+  }
+
+  const ago = t => {
+    const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    return m < 1 ? 'baru saja' : m < 60 ? m + ' menit lalu' : m < 1440 ? Math.round(m / 60) + ' jam lalu' : Math.round(m / 1440) + ' hari lalu';
+  };
+  const describe = m => `${BF.FACTIONS[m.faction] ? BF.FACTIONS[m.faction].name : '?'} · ${BF.ERAS[m.era] ? BF.ERAS[m.era].name : ''} · menit ke-${Math.floor(m.tick / 1200)} · ${ago(m.time)}`;
+
+  // Simpanan terbaru di antara slot manual & otomatis.
+  function latestSave() {
+    const a = BF.save.meta('manual'), b = BF.save.meta('auto');
+    if (!a && !b) return null;
+    return !b || (a && a.time >= b.time) ? { slot: 'manual', meta: a } : { slot: 'auto', meta: b };
+  }
+
+  menu.refresh = function () {
+    const l = latestSave();
+    show('btn-continue', !!l);
+    if (l) $('btn-continue').textContent = 'Lanjutkan: ' + describe(l.meta);
+  };
+
+  function load(slot) {
+    const st = BF.save.read(slot);
+    if (!st) return false;
+    game().start({ state: st });
+    return true;
+  }
+
+  function startAI() {
+    let foe = menu.foe;
+    if (foe === 'random') { const others = fkeys.filter(k => k !== menu.faction); foe = others[(Math.random() * others.length) | 0]; }
+    game().start({ difficulty: menu.difficulty, factions: [menu.faction, foe] });
+  }
+
+  menu.toStart = function () {
+    game().stop();
+    net.close();
+    mpReset('');
+    for (const id of ['overlay-end', 'overlay-menu', 'overlay-help']) show(id, false);
+    show('overlay-start', true);
+    menu.refresh();
+  };
+
+  // ---------------------------------------------------------------- multiplayer: lobi
+
+  function mpStatus(msg, bad) {
+    const el = $('mp-status');
+    el.textContent = msg || '';
+    el.classList.toggle('bad', !!bad);
+  }
+
+  function mpReset(msg, bad) {
+    net.close();
+    menu.inLobby = false;
+    menu.peerHere = false;
+    menu.peer = null;
+    show('mp-connect', true);
+    show('mp-lobby', false);
+    mpStatus(msg, bad);
+  }
+
+  function renderLobby() {
+    const host = net.slot === 0, me = BF.SLOTS[net.slot], other = BF.SLOTS[1 - net.slot];
+    $('mp-room').textContent = net.code;
+    $('mp-players').innerHTML =
+      `<div><i style="background:${me.color}"></i>Kamu (${me.label})<b>${BF.FACTIONS[menu.faction].name}</b></div>` +
+      `<div><i style="background:${other.color}"></i>Lawan (${other.label})<b>${menu.peerHere ? (menu.peer ? BF.FACTIONS[menu.peer].name : '…') : 'menunggu…'}</b></div>`;
+    show('mp-start', host);
+    $('mp-start').disabled = !(menu.peerHere && menu.peer);
+  }
+
+  function startMp(seed, factions) {
+    menu.inLobby = false;
+    net.begin();
+    game().start({ mp: true, seed, factions, human: net.slot });
+  }
+
+  // Lawan keluar / koneksi putus di tengah permainan.
+  function endMp(note, win) {
+    const s = game().s;
+    s.over = true;
+    s.winner = win ? s.human : -1;
+    BF.hud.endNote = note;
+    BF.hud.showEnd(s);
+    audio.play(win ? 'win' : 'error');
+    net.close();
+  }
+
+  function onNet(type, d, action) {
+    const g = game(), playing = g.running && g.s && g.s.mp && !g.s.over;
+    switch (type) {
+      case 'open': action(); break;
+      case 'room':
+      case 'joined':
+        menu.inLobby = true;
+        menu.peerHere = type === 'joined';
+        menu.peer = null;
+        show('mp-connect', false);
+        show('mp-lobby', true);
+        if (type === 'joined') net.send({ k: 'hello', faction: menu.faction });
+        renderLobby();
+        mpStatus(type === 'room' ? 'Bagikan kode ruangan ini ke lawanmu.' : 'Menunggu tuan rumah memulai…');
+        break;
+      case 'peer':
+        menu.peerHere = true;
+        net.send({ k: 'hello', faction: menu.faction });
+        renderLobby();
+        mpStatus('Lawan bergabung.');
+        break;
+      case 'msg':
+        if (d.k === 'hello' && BF.FACTIONS[d.faction]) {
+          menu.peer = d.faction;
+          menu.peerHere = true;
+          if (menu.inLobby) renderLobby();
+        } else if (d.k === 'start' && net.slot === 1 && menu.inLobby && Number.isInteger(d.seed) &&
+          Array.isArray(d.factions) && d.factions.length === 2 && d.factions.every(f => typeof f === 'string' && BF.FACTIONS[f])) startMp(d.seed, d.factions);
+        break;
+      case 'left':
+        if (playing) endMp('Lawan keluar dari permainan.', true);
+        else if (menu.inLobby) mpReset('Lawan keluar. Ruangan ditutup.', true);
+        break;
+      case 'error':
+        if (!playing) mpReset(d, true);
+        break;
+      case 'close':
+        if (playing) endMp('Koneksi ke server terputus.', false);
+        else if (menu.mode === 'mp') mpReset('Koneksi ke server terputus.', true);
+        break;
+      case 'desync':
+        BF.hud.toast('Peringatan: permainan tidak sinkron dengan lawan');
+        break;
+    }
+  }
+
+  function mpOpen(action) {
+    const addr = $('mp-addr').value.trim();
+    if (!/^[A-Za-z0-9.\-]+(:\d{1,5})?$/.test(addr)) { mpStatus('Alamat server tidak valid', true); return; }
+    mpStatus('Menghubungkan…');
+    net.connect(addr, (type, d) => onNet(type, d, action));
+  }
+
+  // ---------------------------------------------------------------- menu dalam permainan
+
+  function renderGameMenu() {
+    const s = game().s, mp = s.mp, man = BF.save.meta('manual'), auto = BF.save.meta('auto');
+    $('m-sfx').textContent = 'Efek suara: ' + (audio.sfx ? 'Nyala' : 'Mati');
+    $('m-music').textContent = 'Musik: ' + (audio.music ? 'Nyala' : 'Mati');
+    $('m-save').disabled = mp;
+    $('m-load').disabled = mp || !man;
+    $('m-loadauto').disabled = mp || !auto;
+    $('m-load').textContent = 'Muat Simpanan' + (man ? ' (' + ago(man.time) + ')' : '');
+    $('m-loadauto').textContent = 'Muat Simpanan Otomatis' + (auto ? ' (' + ago(auto.time) + ')' : '');
+    $('m-quit').textContent = mp ? 'Menyerah & Keluar' : 'Keluar ke Menu Utama';
+  }
+  const note = msg => { $('m-note').textContent = msg || ''; };
+
+  menu.openGameMenu = function () {
+    const g = game();
+    if (!g.running || !g.s || g.s.over || g.menuOpen) return;
+    g.menuOpen = true;
+    menu.wasPaused = g.paused;
+    if (!g.s.mp) g.setPaused(true);     // multiplayer tidak bisa dijeda sepihak
+    note(g.s.mp ? 'Simpan/muat tidak tersedia di multiplayer. Permainan tetap berjalan.' : '');
+    renderGameMenu();
+    show('overlay-menu', true);
+  };
+
+  menu.closeGameMenu = function () {
+    const g = game();
+    if (!g.menuOpen) return;
+    g.menuOpen = false;
+    if (g.s && !g.s.mp) g.setPaused(menu.wasPaused);
+    show('overlay-menu', false);
+  };
+
+  // ---------------------------------------------------------------- init
+
+  menu.init = function () {
+    audio.load();
+    renderFactions();
+    for (const b of $('mode-tabs').children) b.addEventListener('click', () => setMode(b.dataset.mode));
+
+    const foe = $('foe');
+    foe.innerHTML = '<option value="random">Acak</option>' + fkeys.map(k => `<option value="${k}">${BF.FACTIONS[k].name}</option>`).join('');
+    foe.addEventListener('change', () => { menu.foe = foe.value; });
+
+    const diffEl = $('difficulty');
+    for (const k of Object.keys(BF.DIFF)) {
+      const b = document.createElement('button');
+      b.textContent = BF.DIFF[k].label;
+      b.className = 'choice' + (k === menu.difficulty ? ' on' : '');
+      b.addEventListener('click', () => {
+        menu.difficulty = k;
+        for (const c of diffEl.children) c.classList.toggle('on', c === b);
+      });
+      diffEl.appendChild(b);
+    }
+
+    $('btn-start').addEventListener('click', startAI);
+    $('btn-continue').addEventListener('click', () => {
+      const l = latestSave();
+      if (!l || !load(l.slot)) { BF.hud.toast('Simpanan tidak bisa dimuat'); menu.refresh(); }
+    });
+    $('btn-again').addEventListener('click', menu.toStart);
+    for (const id of ['btn-howto', 'btn-help', 'm-help']) $(id).addEventListener('click', () => show('overlay-help', true));
+    $('btn-help-close').addEventListener('click', () => show('overlay-help', false));
+
+    $('mp-addr').value = /^https?:$/.test(location.protocol) ? location.host : 'localhost:8080';
+    $('mp-create').addEventListener('click', () => mpOpen(() => net.create()));
+    $('mp-join').addEventListener('click', () => {
+      const code = $('mp-code').value.trim().toUpperCase();
+      if (!/^[A-Z0-9]{4}$/.test(code)) { mpStatus('Kode ruangan terdiri dari 4 karakter', true); return; }
+      mpOpen(() => net.join(code));
+    });
+    $('mp-leave').addEventListener('click', () => mpReset(''));
+    $('mp-start').addEventListener('click', () => {
+      if (net.slot !== 0 || !menu.peerHere || !menu.peer) return;
+      const seed = (Math.random() * 2147483647) | 0, factions = [menu.faction, menu.peer];
+      net.send({ k: 'start', seed, factions });
+      startMp(seed, factions);
+    });
+
+    $('btn-menu').addEventListener('click', menu.openGameMenu);
+    $('m-resume').addEventListener('click', menu.closeGameMenu);
+    $('m-save').addEventListener('click', () => {
+      note(BF.save.write('manual', game().s) ? 'Permainan disimpan.' : 'Gagal menyimpan: penyimpanan browser penuh atau tidak tersedia.');
+      renderGameMenu();
+    });
+    $('m-load').addEventListener('click', () => { if (!load('manual')) note('Simpanan tidak ada atau rusak.'); });
+    $('m-loadauto').addEventListener('click', () => { if (!load('auto')) note('Simpanan otomatis tidak ada atau rusak.'); });
+    $('m-sfx').addEventListener('click', () => { audio.sfx = !audio.sfx; audio.persist(); renderGameMenu(); audio.play('select'); });
+    $('m-music').addEventListener('click', () => { audio.music = !audio.music; audio.persist(); renderGameMenu(); });
+    $('m-quit').addEventListener('click', menu.toStart);
+    menu.refresh();
+  };
+})();

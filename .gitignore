@@ -1,0 +1,4 @@
+.DS_Store
+node_modules/
+# sumber aset mentah: besar dan bisa diunduh ulang oleh tools/aset/olah.mjs
+tools/aset/sumber/

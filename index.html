@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Benteng Fajar</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <canvas id="fx"></canvas>
+
+  <div id="topbar">
+    <div class="res"><i class="ico food"></i><small>Pangan</small><span id="r-food">0</span></div>
+    <div class="res"><i class="ico wood"></i><small>Kayu</small><span id="r-wood">0</span></div>
+    <div class="res"><i class="ico gold"></i><small>Emas</small><span id="r-gold">0</span></div>
+    <div class="res"><i class="ico stone"></i><small>Batu</small><span id="r-stone">0</span></div>
+    <div class="res"><i class="ico pop"></i><small>Populasi</small><span id="r-pop">0/0</span></div>
+    <div id="era"></div>
+    <div class="spacer"></div>
+    <button id="btn-idle" class="tb">Pekerja menganggur: 0</button>
+    <div id="clock">00:00</div>
+    <button id="btn-speed" class="tb">1×</button>
+    <button id="btn-pause" class="tb">Jeda</button>
+    <button id="btn-help" class="tb">Bantuan</button>
+    <button id="btn-menu" class="tb">Menu</button>
+  </div>
+
+  <div id="toast"></div>
+  <div id="paused" class="hidden">JEDA</div>
+  <div id="net-wait" class="hidden">Menunggu pemain lain…</div>
+
+  <div id="bottom">
+    <canvas id="minimap"></canvas>
+    <div id="info">
+      <canvas id="portrait" class="hidden"></canvas>
+      <div id="info-body"></div>
+    </div>
+    <div id="cmds"></div>
+  </div>
+  <div id="tooltip" class="hidden"></div>
+
+  <div id="overlay-start" class="overlay">
+    <div class="card start">
+      <h1>Benteng Fajar</h1>
+      <p class="tagline">Strategi real-time: bangun permukiman, naikkan era, taklukkan wangsa lawan.</p>
+      <div id="mode-tabs" class="tabs">
+        <button data-mode="ai" class="on">Lawan AI</button>
+        <button data-mode="mp">Multiplayer</button>
+      </div>
+
+      <div class="label">Pilih wangsamu</div>
+      <div id="factions" class="factions"></div>
+      <div id="faction-info" class="faction-info"></div>
+
+      <div id="panel-ai">
+        <div class="row2">
+          <div>
+            <div class="label">Wangsa lawan</div>
+            <select id="foe"></select>
+          </div>
+          <div>
+            <div class="label">Tingkat kesulitan</div>
+            <div id="difficulty" class="choices"></div>
+          </div>
+        </div>
+        <button id="btn-start" class="primary">Mulai Bermain</button>
+        <button id="btn-continue" class="ghost hidden"></button>
+      </div>
+
+      <div id="panel-mp" class="hidden">
+        <div id="mp-connect">
+          <div class="label">Alamat server</div>
+          <input id="mp-addr" type="text" spellcheck="false" autocomplete="off">
+          <div class="row2 mp-actions">
+            <button id="mp-create" class="primary">Buat Ruangan</button>
+            <div class="join">
+              <input id="mp-code" type="text" maxlength="4" placeholder="KODE" spellcheck="false" autocomplete="off">
+              <button id="mp-join" class="primary">Gabung</button>
+            </div>
+          </div>
+          <p class="mp-help">Butuh server: jalankan <code>node server.js</code> di folder game, lalu kedua pemain membuka alamat yang ditampilkannya.</p>
+        </div>
+        <div id="mp-lobby" class="hidden">
+          <div class="room">Kode ruangan <b id="mp-room"></b></div>
+          <div id="mp-players" class="mp-players"></div>
+          <button id="mp-start" class="primary">Mulai</button>
+          <button id="mp-leave" class="ghost">Keluar ruangan</button>
+        </div>
+        <p id="mp-status" class="status-line"></p>
+      </div>
+
+      <button id="btn-howto" class="ghost">Cara Bermain</button>
+    </div>
+  </div>
+
+  <div id="overlay-menu" class="overlay hidden">
+    <div class="card">
+      <h2>Menu</h2>
+      <button id="m-resume" class="primary">Lanjutkan</button>
+      <button id="m-save" class="ghost">Simpan Permainan</button>
+      <button id="m-load" class="ghost">Muat Simpanan</button>
+      <button id="m-loadauto" class="ghost">Muat Simpanan Otomatis</button>
+      <button id="m-sfx" class="ghost"></button>
+      <button id="m-music" class="ghost"></button>
+      <button id="m-help" class="ghost">Cara Bermain</button>
+      <button id="m-quit" class="ghost danger"></button>
+      <p id="m-note" class="status-line"></p>
+    </div>
+  </div>
+
+  <div id="overlay-help" class="overlay hidden">
+    <div class="card wide">
+      <h2>Cara Bermain</h2>
+      <div class="cols">
+        <div>
+          <h3>Tujuan</h3>
+          <p>Robohkan semua bangunan musuh (ladang dan tembok tidak dihitung) sebelum mereka merobohkan milikmu.</p>
+          <h3>Ekonomi</h3>
+          <p>Pekerja mengumpulkan <b>Pangan</b> (semak beri, ladang, hewan buruan), <b>Kayu</b>, <b>Emas</b>, dan <b>Batu</b>, lalu menyetornya ke Balai Kota atau Lumbung. <b>Rumah</b> menambah batas populasi.</p>
+          <h3>Berburu</h3>
+          <p>Pilih pekerja lalu klik kanan <b>rusa</b> atau <b>babi hutan</b>: mereka melempar tombak, lalu menguliti bangkainya — pangan terkumpul lebih cepat daripada memetik beri. Rusa lari saat diserang; babi hutan menyeruduk balik, jadi buru beramai-ramai.</p>
+          <h3>Era &amp; teknologi</h3>
+          <p>Naik era di Balai Kota. Teliti teknologi ekonomi di Lumbung dan Balai Kota, senjata dan zirah di <b>Pandai Besi</b>.</p>
+          <h3>Tembok</h3>
+          <p>Pilih <b>Tembok Batu</b> lalu seret di peta untuk membangun sebaris. <b>Gerbang</b> hanya bisa dilewati unitmu dan boleh diletakkan di atas tembokmu sendiri.</p>
+          <h3>Counter</h3>
+          <p>Tombak mengalahkan kuda · kuda mengalahkan pemanah dan pelontar · pemanah mengalahkan infanteri · pelontar merobohkan bangunan dan tembok.</p>
+          <h3>Simpan &amp; multiplayer</h3>
+          <p>Simpan/muat lewat tombol <b>Menu</b> (ada juga simpanan otomatis tiap 3 menit). Multiplayer butuh <code>node server.js</code>.</p>
+        </div>
+        <div>
+          <h3>Kontrol</h3>
+          <table>
+            <tr><td>Klik kiri / seret</td><td>Pilih unit atau bangunan</td></tr>
+            <tr><td>Klik ganda</td><td>Pilih semua unit sejenis di layar</td></tr>
+            <tr><td>Klik kanan</td><td>Bergerak, mengumpulkan, berburu, membangun, menyerang, atau titik kumpul</td></tr>
+            <tr><td>Q W E R / A S D F / Z X C V</td><td>Tombol perintah di panel kanan bawah</td></tr>
+            <tr><td>Shift + klik saat membangun</td><td>Letakkan beberapa bangunan sekaligus</td></tr>
+            <tr><td>Panah / tepi layar / minimap</td><td>Geser kamera</td></tr>
+            <tr><td>Roda mouse</td><td>Zoom</td></tr>
+            <tr><td>Seret tombol tengah · [ dan ]</td><td>Putar kamera (Home: kembali ke arah awal)</td></tr>
+            <tr><td>H</td><td>Ke Balai Kota</td></tr>
+            <tr><td>. (titik)</td><td>Pekerja menganggur berikutnya</td></tr>
+            <tr><td>Ctrl/Alt + angka, lalu angka</td><td>Simpan dan panggil grup</td></tr>
+            <tr><td>Spasi</td><td>Pusatkan kamera ke pilihan</td></tr>
+            <tr><td>Del</td><td>Hancurkan milik sendiri</td></tr>
+            <tr><td>Esc</td><td>Batal · kosongkan pilihan · buka Menu</td></tr>
+            <tr><td>P</td><td>Jeda (hanya lawan AI)</td></tr>
+          </table>
+        </div>
+      </div>
+      <button id="btn-help-close" class="primary">Tutup</button>
+    </div>
+  </div>
+
+  <div id="overlay-end" class="overlay hidden">
+    <div class="card">
+      <h1 id="end-title"></h1>
+      <p id="end-text" class="tagline"></p>
+      <div id="end-stats" class="stats-end"></div>
+      <button id="btn-again" class="primary">Main Lagi</button>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/pathfinding.js"></script>
+  <script src="js/sim.js"></script>
+  <script src="js/commands.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/save.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/vendor/three.min.js"></script>
+  <script src="js/relief.js"></script>
+  <script src="js/view.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/assets.js"></script>
+  <script src="js/tex.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/techicon.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/menu.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

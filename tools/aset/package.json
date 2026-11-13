@@ -1,0 +1,8 @@
+{
+  "name": "benteng-fajar-alat-aset",
+  "private": true,
+  "description": "Alat pengolah aset 3D (hanya dipakai saat menyiapkan aset, bukan saat game berjalan)",
+  "dependencies": {
+    "meshoptimizer": "1.3.0"
+  }
+}
