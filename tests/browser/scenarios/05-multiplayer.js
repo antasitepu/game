@@ -112,6 +112,60 @@ module.exports = async ({ page, check, root }) => {
     const lc = Object.keys(la).filter(k => k in lb);
     check('dengan latensi 300 ms: permainan tetap maju & hash identik', l1 - l0 > 20 && lc.length >= 2 && lc.every(k => la[k] === lb[k]) && await a.ev(`!BF.net.desync`) && await b.ev(`!BF.net.desync`), { majuTick: l1 - l0, dibandingkan: lc.length });
 
+    // ---- mekanik baru di multiplayer: berburu, memperbaiki, berlindung, sikap, patroli, berdagang
+    // Keadaan uji (stok, era, pasar, menara, pasukan) dipasang lewat perintah khusus '__uji' yang dieksekusi kedua sisi
+    // pada turn yang sama — mengubah state langsung di satu sisi saja akan merusak sinkronisasi.
+    const SETUP = `(() => { const ex = BF.exec; BF.exec = (s, pid, c) => {
+      if (!c || c.c !== '__uji') return ex(s, pid, c);
+      s.players.forEach((q, o) => {
+        q.res = { food: 2000, wood: 2000, gold: 2000, stone: 2000 }; q.era = 1; q.popCap = 60;
+        const th = s.buildings.find(b => b.owner === o && b.type === 'townhall');
+        th.hp = 1200;
+        const place = (type, dx, dy) => { for (let r = 0; r < 14; r++) for (let d = -r; d <= r; d++) for (const [x, y] of [[th.tx + dx + d, th.ty + dy + r], [th.tx + dx + r, th.ty + dy + d], [th.tx + dx + d, th.ty + dy - r], [th.tx + dx - r, th.ty + dy + d]]) if (BF.canPlace(s.map, type, x, y)) return BF.spawnBuilding(s, type, o, x, y, true); };
+        place('market', 5, 5); place('tower', -3, 4);
+        for (let i = 0; i < 5; i++) { const f = BF.findFreeNear(s.map, th.tx + 1 + i, th.ty + 5, 6, o); BF.spawnUnit(s, i < 3 ? 'spear' : 'archer', o, f.x + 0.5, f.y + 0.5); }
+      });
+    }; })()`;
+    for (const p of [a, b]) await p.ev(SETUP);
+    await a.ev(`BF.issue({ c: '__uji' })`);
+    await sleep(1500);
+    const ready = `(() => { const s = BF.game.s; return s.buildings.filter(q => q.type === 'market').length === 2 && s.buildings.filter(q => q.type === 'tower').length === 2 && s.units.filter(u => u.type === 'spear').length === 6; })()`;
+    check('keadaan uji terpasang identik di kedua sisi', await a.ev(ready) && await b.ev(ready) && await a.ev(`!BF.net.desync`) && await b.ev(`!BF.net.desync`));
+    for (const p of [a, b]) await p.ev(`window.__h = {}`);
+    const orders = (me, stance, sell, buy) => `(() => { const s = BF.game.s, me = ${me}, ids = k => s.units.filter(u => u.owner === me && u.type === k).map(u => u.id);
+      const own = t => s.buildings.find(q => q.owner === me && q.type === t), th = own('townhall'), w = ids('worker');
+      const deer = s.animals.filter(q => q.type === 'deer' && q.state !== 'carcass').sort((x, y) => BF.dist(x.x - th.tx, x.y - th.ty) - BF.dist(y.x - th.tx, y.y - th.ty))[0];
+      BF.issue({ c: 'repair', ids: w.slice(0, 2), bid: th.id });
+      BF.issue({ c: 'hunt', ids: w.slice(2), aid: deer.id });
+      BF.issue({ c: 'garrison', ids: ids('spear').slice(0, 2), bid: own('tower').id });
+      BF.issue({ c: 'patrol', ids: ids('spear').slice(2), x: th.tx + 7, y: th.ty + 8 });
+      BF.issue({ c: 'stance', ids: ids('archer'), v: ${stance} });
+      BF.issue({ c: 'trade', bid: own('market').id, res: '${sell}', buy: false });
+      BF.issue({ c: 'trade', bid: own('market').id, res: '${buy}', buy: true });
+      window.__mk = own('market').id; })()`;
+    await a.ev(orders(0, 1, 'wood', 'food'));
+    await sleep(400);
+    await b.ev(orders(1, 2, 'stone', 'food'));
+    // satu transaksi lewat tombol panel sungguhan (jalur UI → jaringan)
+    await a.ev(`BF.ui.select([window.__mk])`);
+    await sleep(400);
+    await a.clickEl('#cmds .cmd:nth-child(2)');   // W: Jual Kayu
+    await sleep(8000);
+    const seen = me => `(() => { const s = BF.game.s, me = ${me}, us = s.units.filter(u => u.owner === me), tw = s.buildings.find(q => q.owner === me && q.type === 'tower'), th = s.buildings.find(q => q.owner === me && q.type === 'townhall');
+      return { dalam: tw.inside.length, sikap: us.filter(u => u.type === 'archer').map(u => u.stance).join(''), patroli: us.filter(u => u.type === 'spear' && (u.order.type === 'patrol' || (u.order.resume && u.order.resume.type === 'patrol'))).length,
+        hpBalai: Math.round(th.hp), buru: us.filter(u => u.order.animal).length + us.filter(u => u.type === 'worker' && u.order.type === 'gather' && u.order.state === 'return').length, harga: Object.keys(s.market).map(r => s.market[r].toFixed(1)).join('/') }; })()`;
+    const hostAtGuest = await b.ev(seen(0)), guestAtHost = await a.ev(seen(1));
+    check('perintah baru tuan rumah berlaku di simulasi tamu', hostAtGuest.dalam === 2 && hostAtGuest.sikap === '11' && hostAtGuest.patroli === 1 && hostAtGuest.hpBalai > 1300 && hostAtGuest.buru >= 1, hostAtGuest);
+    check('perintah baru tamu berlaku di simulasi tuan rumah', guestAtHost.dalam === 2 && guestAtHost.sikap === '22' && guestAtHost.patroli === 1 && guestAtHost.hpBalai > 1300 && guestAtHost.buru >= 1, guestAtHost);
+    const price = await a.ev(`BF.game.s.market`);
+    check('harga pasar bergeser oleh transaksi kedua pemain', price.wood < 95 && price.stone < 128 && price.food > 105, price);
+    for (const [p, me] of [[a, 0], [b, 1]]) await p.ev(`BF.issue({ c: 'ungarrison', bid: BF.game.s.buildings.find(q => q.owner === ${me} && q.type === 'tower').id })`);
+    await sleep(2500);
+    const out = `BF.game.s.buildings.filter(q => q.type === 'tower').every(q => q.inside.length === 0) && BF.game.s.units.filter(u => u.type === 'spear').length === 6`;
+    check('keluar dari menara berlaku di kedua sisi', await a.ev(out) && await b.ev(out));
+    const na = await a.ev(`window.__h`), nb = await b.ev(`window.__h`), nc = Object.keys(na).filter(k => k in nb), nd = nc.filter(k => na[k] !== nb[k]);
+    check('mekanik baru: hash state tetap identik, tanpa desinkronisasi', nc.length >= 4 && nd.length === 0 && await a.ev(`!BF.net.desync`) && await b.ev(`!BF.net.desync`), { dibandingkan: nc.length, beda: nd.length });
+
     // ---- tamu keluar → tuan rumah menang
     await b.clickEl('#btn-menu');
     await sleep(100);
