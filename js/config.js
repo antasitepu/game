@@ -286,8 +286,10 @@ BF.TECHS = {
   },
 };
 
+// smart: kecerdasan AI — 0 = dasar; 1 = mundur saat kalah jumlah, berburu babi hutan berkelompok, berdagang di pasar;
+// 2 = juga menyerang dari dua arah.
 BF.DIFF = {
-  easy: { label: 'Mudah', think: 40, firstAttack: 10 * 60 * 20, firstWave: 4, waveGrow: 2, maxWave: 12, maxArmy: 14, maxWorkers: [9, 13, 16], eraWorkers: [9, 13], towers: 0, techs: 2 },
-  normal: { label: 'Sedang', think: 20, firstAttack: 7 * 60 * 20, firstWave: 6, waveGrow: 3, maxWave: 22, maxArmy: 26, maxWorkers: [12, 18, 24], eraWorkers: [11, 16], towers: 1, techs: 6 },
-  hard: { label: 'Sulit', think: 20, firstAttack: 4.5 * 60 * 20, firstWave: 7, waveGrow: 4, maxWave: 34, maxArmy: 40, maxWorkers: [14, 22, 30], eraWorkers: [12, 18], towers: 2, techs: 99 },
+  easy: { label: 'Mudah', think: 40, firstAttack: 10 * 60 * 20, firstWave: 4, waveGrow: 2, maxWave: 12, maxArmy: 14, maxWorkers: [9, 13, 16], eraWorkers: [9, 13], towers: 0, techs: 2, smart: 0 },
+  normal: { label: 'Sedang', think: 20, firstAttack: 7 * 60 * 20, firstWave: 6, waveGrow: 3, maxWave: 22, maxArmy: 26, maxWorkers: [12, 18, 24], eraWorkers: [11, 16], towers: 1, techs: 6, smart: 1 },
+  hard: { label: 'Sulit', think: 20, firstAttack: 4.5 * 60 * 20, firstWave: 7, waveGrow: 4, maxWave: 34, maxArmy: 40, maxWorkers: [14, 22, 30], eraWorkers: [12, 18], towers: 2, techs: 99, smart: 2 },
 };

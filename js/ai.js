@@ -2,7 +2,9 @@
 // AI lawan: ekonomi → rumah → bangunan militer → naik era → teknologi → gelombang serangan.
 // Memakai BF.cmd yang sama dengan pemain, jadi tunduk pada biaya dan aturan yang sama.
 (function () {
-  const idx = BF.idx, dist = BF.dist;
+  const idx = BF.idx, dist = BF.dist, N = BF.MAP_SIZE;
+  // Nilai tempur kasar sebuah unit: biayanya × sisa nyawanya.
+  const worth = (s, u) => { const d = BF.unitDef(s, u), c = d.cost; return ((c.food || 0) + (c.wood || 0) + (c.gold || 0)) * u.hp / d.hp; };
   const SHARES = [
     { food: 0.5, wood: 0.38, gold: 0.12, stone: 0 },
     { food: 0.4, wood: 0.3, gold: 0.22, stone: 0.08 },
@@ -79,6 +81,34 @@
       if (d < bd) { bd = d; best = a; }
     }
     return best;
+  }
+
+  // Babi hutan menyeruduk balik, jadi hanya diburu berempat sekaligus — dan hanya bila tak ada rusa/bangkai di dekat markas.
+  function boarHunt(s, p, c) {
+    if (c.workers.length < 7 || prey(s, c)) return;
+    const isBoar = w => { const a = w.order.animal && s.byId.get(w.order.animal); return !!a && a.type === 'boar'; };
+    if (c.workers.some(isBoar)) return;                                   // perburuan sedang berlangsung
+    let boar = null, bd = 13;
+    for (const a of s.animals) {
+      if (a.dead || a.type !== 'boar' || a.state === 'carcass' || s.map.region[idx(a.x | 0, a.y | 0)] !== c.region) continue;
+      const d = dist(a.x - c.hx, a.y - c.hy);
+      if (d < bd) { bd = d; boar = a; }
+    }
+    if (!boar) return;
+    const ws = c.workers.filter(w => w.order.type === 'idle' || (w.order.type === 'gather' && w.order.state !== 'return' && !w.order.animal))
+      .sort((a, b) => dist(a.x - boar.x, a.y - boar.y) - dist(b.x - boar.x, b.y - boar.y)).slice(0, 4);
+    if (ws.length === 4) BF.cmd.hunt(s, ws, boar);
+  }
+
+  // Dagang di pasar, paling sering sekali per 5 detik: jual stok yang menumpuk saat emas menipis; beli pangan/kayu yang
+  // hampir habis saat emas berlebih.
+  function commerce(s, p, ai, c) {
+    if (!(c.own.market || []).some(b => b.built) || s.tick - (ai.tradeT || 0) < 100) return;
+    const R = p.res;
+    let done = false;
+    for (const r of ['wood', 'food', 'stone']) if (!done && R[r] > (r === 'stone' ? 450 : 700) && R.gold < 350) done = BF.cmd.trade(s, p.id, r, false);
+    for (const r of ['food', 'wood']) if (!done && R[r] < 60 && R.gold > 450) done = BF.cmd.trade(s, p.id, r, true);
+    if (done) ai.tradeT = s.tick;
   }
 
   function assign(s, p, c, w, res) {
@@ -237,6 +267,7 @@
       else if (!has('barracks')) { if (total >= 6) front('barracks', 7); }
       else if (p.era >= 1 && !has('range')) front('range', 8);
       else if (p.era >= 1 && !has('stable')) front('stable', 8);
+      else if (p.era >= 1 && diff.smart && !has('market')) { if (spendOK(p.B.market.cost)) construct(s, p, c, 'market', c.hx, c.hy, 3, 12, 1); }
       else if (p.era >= 1 && !has('smithy') && diff.techs > 2) front('smithy', 4);
       else if (p.era >= 1 && has('tower') < diff.towers && p.res.stone >= 150) front('tower', 5);
       else if (p.era >= 2 && !has('workshop')) front('workshop', 9);
@@ -266,28 +297,63 @@
   function warfare(s, p, ai, c, diff, underAttack) {
     const army = c.army, rx = c.hx + ai.dirX * 7, ry = c.hy + ai.dirY * 7;
     if (ai.state === 'build') {
-      if (underAttack) {
+      // Baru saja mundur (20 detik terakhir): jangan berbalik menyerbu tempat terakhir kena pukul, kecuali markas sendiri diserang.
+      const defend = underAttack && (s.tick - (ai.retreatT || -1e9) > 400 || dist(p.lastHitX - c.hx, p.lastHitY - c.hy) < 16);
+      if (defend) {
         const list = army.filter(u => u.order.type === 'idle' || u.order.type === 'move');
         if (list.length) BF.cmd.move(s, list, p.lastHitX, p.lastHitY, true);
       } else {
         const list = army.filter(u => u.order.type === 'idle' && dist(u.x - rx, u.y - ry) > 6);
         if (list.length) BF.cmd.move(s, list, rx, ry);
-        if (army.length >= ai.waveSize && s.tick >= diff.firstAttack) { ai.state = 'attack'; ai.sent = army.length; ai.target = 0; }
+        if (army.length >= ai.waveSize && s.tick >= diff.firstAttack && s.tick >= (ai.holdT || 0)) {
+          ai.state = 'attack'; ai.sent = army.length; ai.target = 0;
+          ai.flank = null;
+          ai.wantFlank = diff.smart >= 2 && army.length >= 9;
+        }
       }
     }
     if (ai.state !== 'attack') return;
-    if (army.length <= Math.max(1, Math.floor(ai.sent * 0.25))) {
+    const stand = grow => {                              // akhiri gelombang: pulang ke titik kumpul, gelombang berikutnya lebih besar
       ai.state = 'build';
-      ai.waveSize = Math.min(diff.maxWave, ai.waveSize + diff.waveGrow);
+      ai.flank = null;
+      ai.waveSize = Math.min(diff.maxWave, grow + diff.waveGrow);
       if (army.length) BF.cmd.move(s, army, rx, ry);
-      return;
-    }
+    };
+    if (army.length <= Math.max(1, Math.floor(ai.sent * 0.25))) { ai.retreats = 0; stand(ai.waveSize); return; }
     ai.sent = Math.max(ai.sent, army.length);
+
+    // Kelompok pengapit (smart 2): sepertiga pasukan memutar ke titik di samping sasaran, lalu menyerbu dari sana.
+    const fl = ai.flank && !ai.flank.go ? ai.flank : null, wing = fl ? army.filter(u => fl.ids.indexOf(u.id) >= 0) : [];
+    let surge = false;
+    if (fl) {
+      if (!wing.length || wing.filter(u => dist(u.x - fl.x, u.y - fl.y) < 5).length >= wing.length * 0.6 || s.tick - fl.t0 > 900) fl.go = surge = true;
+      else { const lag = wing.filter(u => u.order.type === 'idle'); if (lag.length) BF.cmd.move(s, lag, fl.x, fl.y, true); }
+    }
+    const core = fl && !fl.go ? army.filter(u => fl.ids.indexOf(u.id) < 0) : army, body = core.length ? core : army;
+    let mx = 0, my = 0;
+    for (const u of body) { mx += u.x; my += u.y; }
+    mx /= body.length; my /= body.length;
+
+    // Mundur bila kalah jumlah (smart ≥ 1): tiap 3 detik bandingkan nilai pasukan di sekitar barisan dengan nilai pasukan
+    // dan bangunan bersenjata musuh di dekatnya. Paling banyak dua kali berturut-turut, dan tidak saat pasukan sudah
+    // hampir sebesar batasnya — supaya AI tidak ragu-ragu selamanya.
+    if (diff.smart && s.tick - (ai.sizeT || 0) >= 60) {
+      ai.sizeT = s.tick;
+      let mine = 0, foe = 0;
+      for (const u of army) if (dist(u.x - mx, u.y - my) < 10) mine += worth(s, u);
+      for (const u of s.units) if (u.owner !== p.id && !u.dead && BF.unitDef(s, u).atk && dist(u.x - mx, u.y - my) < 9) foe += worth(s, u);
+      for (const b of s.buildings) if (b.owner !== p.id && !b.dead && b.built && BF.bldDef(s, b).atk && BF.distToBuilding(b, mx, my) < 8) foe += 120 + 40 * b.inside.length;
+      if (mine < foe * 0.5 && army.length < diff.maxArmy * 0.8 && (ai.retreats || 0) < 2) {
+        ai.retreats = (ai.retreats || 0) + 1;
+        ai.retreatT = s.tick;
+        ai.holdT = s.tick + 600;
+        stand(Math.max(ai.waveSize, army.length));
+        return;
+      }
+    }
+
     let t = s.byId.get(ai.target), fresh = false;
     if (!t || t.dead) {
-      let mx = 0, my = 0;
-      for (const u of army) { mx += u.x; my += u.y; }
-      mx /= army.length; my /= army.length;
       // Sasaran: bangunan musuh terdekat; tembok/gerbang hanya bila tidak ada pilihan lain.
       const nearest = barrier => {
         let best = null, bd = 1e9;
@@ -312,7 +378,23 @@
     }
     if (!t) return;
     const tx = t.kind === 'unit' ? t.x : t.tx + t.size / 2, ty = t.kind === 'unit' ? t.y : t.ty + t.size / 2;
-    const list = army.filter(u => (fresh ? u.order.type !== 'attack' : u.order.type === 'idle'));
+    if (ai.wantFlank && t.kind === 'building') {
+      // titik apit: 11 tile ke samping sasaran (sisi bergantian tiap gelombang), sedikit ke arah markas sendiri
+      ai.wantFlank = false;
+      ai.side = -(ai.side || 1);
+      const vx = c.hx - tx, vy = c.hy - ty, l = dist(vx, vy) || 1;
+      const wx = BF.clamp(tx - vy / l * ai.side * 11 + vx / l * 3, 2, N - 3), wy = BF.clamp(ty + vx / l * ai.side * 11 + vy / l * 3, 2, N - 3);
+      const f = BF.findFreeNear(s.map, wx | 0, wy | 0, 6, p.id);
+      const ids = army.filter((u, i) => i % 3 === 2 && BF.unitDef(s, u).cls !== 'siege').map(u => u.id);
+      if (f && s.map.region[idx(f.x, f.y)] === c.region && ids.length >= 3) {
+        ai.flank = { ids, x: f.x + 0.5, y: f.y + 0.5, t0: s.tick, go: false };
+        BF.cmd.move(s, army.filter(u => ids.indexOf(u.id) >= 0), ai.flank.x, ai.flank.y, true);
+        BF.cmd.move(s, army.filter(u => ids.indexOf(u.id) < 0 && u.order.type !== 'attack'), tx, ty, true);
+        return;
+      }
+    }
+    if (surge && wing.length) BF.cmd.move(s, wing.filter(u => u.order.type !== 'attack'), tx, ty, true);     // pengapit menyerbu
+    const list = core.filter(u => (fresh ? u.order.type !== 'attack' : u.order.type === 'idle'));
     if (list.length) BF.cmd.move(s, list, tx, ty, true);
   }
 
@@ -342,6 +424,7 @@
     }
 
     repairs(s, p, c);
+    if (diff.smart) { boarHunt(s, p, c); commerce(s, p, ai, c); }
     economy(s, p, ai, c);
 
     let queuedWorkers = 0;

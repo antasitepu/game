@@ -371,5 +371,76 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('harga perlahan kembali ke harga dasar', s.market.wood > 60 && s.market.wood <= 100 && Math.abs(s.market.food - 100) < 5, { kayu: s.market.wood.toFixed(1), pangan: s.market.food.toFixed(1) });
 }
 
+// 12. AI lebih cerdas (BF.DIFF.smart): mundur saat kalah jumlah, mengapit dari dua arah, berburu babi berempat, berdagang
+{
+  const mk = diff => { const s = BF.newGame({ seed: 4202, ai: [false, true], difficulty: diff, factions: ['padang', 'bara'] }); s.animals.length = 0; s.players[0].popCap = s.players[1].popCap = 70; return s; };
+  const ring = (s, cx, cy, type, owner, n) => { const out = []; for (let i = 0; i < n; i++) { const f = BF.findFreeNear(s.map, Math.round(cx + (i % 4) - 1.5), Math.round(cy + ((i / 4) | 0)), 6, owner); out.push(BF.spawnUnit(s, type, owner, f.x + 0.5, f.y + 0.5)); } return out; };
+  const AI0 = (wave, sent) => ({ state: 'attack', waveSize: wave, sent, target: 0, rebalT: 0, dirX: 0, dirY: 0 });
+
+  // mundur: 5 tombak AI menyerbu markas yang dijaga 14 pedang
+  const raid = diff => {
+    const s = mk(diff), th = s.buildings.find(b => b.owner === 0 && b.type === 'townhall'), q = s.players[1];
+    const guards = ring(s, th.tx + 1, th.ty + 5, 'sword', 0, 14);
+    for (const g of guards) g.stance = 1;                      // penjaga bertahan di tempat (tidak mengejar)
+    const army = ring(s, th.tx + 1, th.ty + 12, 'spear', 1, 5);
+    q.ai = AI0(5, 5);
+    let t = 0;
+    for (; t < 20 * 12 && q.ai.state === 'attack'; t++) { BF.step(s); s.events.length = 0; }
+    return { s, q, army, t };
+  };
+  let r = raid('normal');
+  const alive = r.army.filter(u => !u.dead);
+  check('AI Sedang mundur saat kalah jumlah', r.q.ai.state === 'build' && r.q.ai.retreats === 1 && alive.length >= 4 && alive.every(u => u.order.type === 'move') && r.q.ai.waveSize > 5, { tick: r.t, hidup: alive.length, gelombang: r.q.ai.waveSize });
+  run(r.s, 20 * 8);
+  check('setelah mundur tidak langsung berbalik menyerang', r.q.ai.state === 'build' && r.army.filter(u => !u.dead).every(u => u.order.type !== 'attack' && u.order.type !== 'amove'));
+  r = raid('easy');
+  check('AI Mudah tidak mundur (bertempur sampai gelombangnya habis)', !r.q.ai.retreats, { tick: r.t, state: r.q.ai.state });
+
+  // mengapit: AI Sulit dengan 12 pasukan membagi sepertiganya ke titik di samping sasaran
+  let s = mk('hard'), q = s.players[1], th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+  let army = ring(s, th.tx + 1, th.ty + 5, 'spear', 1, 12);
+  s.tick = BF.DIFF.hard.firstAttack;
+  run(s, 20 * 4);
+  const fl = q.ai.flank, tgt = s.byId.get(q.ai.target);
+  const wing = fl ? army.filter(u => fl.ids.indexOf(u.id) >= 0) : [];
+  check('AI Sulit: sepertiga pasukan menjadi kelompok pengapit', q.ai.state === 'attack' && !!fl && wing.length === 4 && !!tgt && BF.distToBuilding(tgt, fl.x, fl.y) > 6, fl && { n: wing.length, jarakKeSasaran: BF.distToBuilding(tgt, fl.x, fl.y).toFixed(1) });
+  check('pengapit menuju titik apit, pasukan utama menuju sasaran', !!fl && wing.every(u => u.order.type === 'amove' && Math.abs(u.order.x - fl.x) < 3 && Math.abs(u.order.y - fl.y) < 3) && army.filter(u => fl.ids.indexOf(u.id) < 0).every(u => u.order.type === 'amove' && BF.dist(u.order.x - fl.x, u.order.y - fl.y) > 5));
+  let went = false;
+  for (let i = 0; i < 20 * 100 && !went; i++) { BF.step(s); s.events.length = 0; went = !q.ai.flank || q.ai.flank.go; }
+  check('pengapit lalu menyerbu sasaran dari samping', went);
+  s = mk('normal'); q = s.players[1]; th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+  ring(s, th.tx + 1, th.ty + 5, 'spear', 1, 12);
+  s.tick = BF.DIFF.normal.firstAttack;
+  run(s, 20 * 4);
+  check('AI Sedang menyerang tanpa mengapit', q.ai.state === 'attack' && !q.ai.flank);
+
+  // babi hutan: diburu berempat sekaligus, tanpa korban
+  s = mk('normal'); q = s.players[1]; th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+  ring(s, th.tx + 1, th.ty + 4, 'worker', 1, 4);
+  const bf = BF.findFreeNear(s.map, th.tx + 8, th.ty + 6, 6, 1), bd = BF.ANIMALS.boar;
+  const boar = { id: s.nextId++, kind: 'animal', type: 'boar', x: bf.x + 0.5, y: bf.y + 0.5, hx: bf.x + 0.5, hy: bf.y + 0.5, hp: bd.hp, food: bd.food, dir: 0, state: 'graze', t: 5, wx: bf.x + 0.5, wy: bf.y + 0.5, tid: 0, cd: 0, atkAnim: 0, moving: false, dead: false };
+  s.animals.push(boar); s.byId.set(boar.id, boar);
+  const workers0 = s.units.filter(u => u.owner === 1 && u.type === 'worker').length;
+  let pack = 0;
+  for (let i = 0; i < 20 * 20 && boar.state !== 'carcass'; i++) { BF.step(s); s.events.length = 0; pack = Math.max(pack, s.units.filter(u => u.owner === 1 && u.order.animal === boar.id).length); }
+  check('AI memburu babi hutan berempat sekaligus', pack >= 4 && boar.state === 'carcass', { pemburu: pack, babi: boar.state });
+  run(s, 20 * 30);
+  check('tak ada pekerja tewas & pangan bertambah dari babi', s.units.filter(u => u.owner === 1 && u.type === 'worker').length >= workers0 && boar.food < bd.food, { sisaPangan: boar.food });
+
+  // pasar: AI membangunnya di Era Baja lalu menjual stok yang menumpuk
+  const trader = diff => {
+    const t = mk(diff), a = t.players[1], h = t.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+    a.era = 1;
+    for (const [type, dx, dy] of [['barracks', 5, 0], ['range', 5, 4], ['stable', -5, 0]]) { const f = BF.findFreeNear(t.map, h.tx + dx, h.ty + dy, 8, 1); for (let rr = 0; rr < 12; rr++) { let ok = false; for (let d = -rr; d <= rr && !ok; d++) for (const [x, y] of [[f.x + d, f.y + rr], [f.x + rr, f.y + d], [f.x + d, f.y - rr], [f.x - rr, f.y + d]]) if (!ok && BF.canPlace(t.map, type, x, y)) { BF.spawnBuilding(t, type, 1, x, y, true); ok = true; } if (ok) break; } }
+    a.res = { food: 300, wood: 2500, gold: 0, stone: 100 };
+    run(t, 20 * 60 * 4);
+    return { market: t.buildings.some(b => b.owner === 1 && b.type === 'market' && b.built), harga: t.market.wood };
+  };
+  let m = trader('normal');
+  check('AI Sedang membangun Pasar dan menjual kayu yang menumpuk', m.market && m.harga < 100, m);
+  m = trader('easy');
+  check('AI Mudah tidak membangun Pasar', !m.market && m.harga === 100, m);
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);
