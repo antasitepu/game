@@ -102,7 +102,7 @@ class Rakitan:
 
         if dasar in TEKSTUR:
             tx = nt.nodes.new('ShaderNodeTexImage')
-            tx.image = bpy.data.images.load(os.path.join(self.aset, 't', TEKSTUR[dasar] + '.jpg'), check_existing=True)
+            tx.image = bpy.data.images.load(os.path.join(self.aset, 't', TEKSTUR[dasar] + '.webp'), check_existing=True)
             hasil = kali(hasil, sumber=tx.outputs['Color']).outputs[2]
         akhir = kali(hasil, nilai=PENGALI.get(dasar, (1, 1, 1)))
         akhir.name = 'pengali'

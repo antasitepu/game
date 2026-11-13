@@ -1,4 +1,5 @@
-// Operasi gambar untuk alat aset. Konversi/pengecilan memakai `sips` (bawaan macOS), piksel dibaca lewat BMP.
+// Operasi gambar untuk alat aset. Pengecilan memakai `sips` (bawaan macOS), pengodean WebP memakai `cwebp`
+// (brew install webp), piksel dibaca lewat BMP.
 // Juga pembaca HDRI Radiance (.hdr) dan penyiapannya menjadi peta lingkungan kecil.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -22,10 +23,15 @@ function sips(args) {
   catch (e) { throw new Error('sips gagal (alat ini memakai sips bawaan macOS): ' + (e.stderr ? e.stderr.toString().trim() : e.message)); }
 }
 
-// Simpan sebagai JPEG dengan sisi terpanjang ≤ maks.
-export function simpanJpg(src, tujuan, maks, kualitas) {
+// Simpan sebagai WebP dengan sisi terpanjang ≤ maks: dikecilkan ke PNG (tanpa rugi) lalu dikodekan sekali saja.
+// WebP dipilih karena pemain mengunduh semua tekstur lewat internet: ±30–40% lebih kecil daripada JPEG semutu.
+export function simpanWebp(src, tujuan, maks, kualitas) {
   fs.mkdirSync(path.dirname(tujuan), { recursive: true });
-  sips(['-s', 'format', 'jpeg', '-s', 'formatOptions', String(kualitas || 82), '-Z', String(maks), fileDari(src), '--out', tujuan]);
+  const png = path.join(tmp, 'kecil' + (urut++) + '.png');
+  sips(['-s', 'format', 'png', '-Z', String(maks), fileDari(src), '--out', png]);
+  try { execFileSync('cwebp', ['-quiet', '-q', String(kualitas || 80), '-m', '6', '-sharp_yuv', png, '-o', tujuan], { stdio: ['ignore', 'ignore', 'pipe'] }); }
+  catch (e) { throw new Error('cwebp gagal (pasang dengan: brew install webp): ' + (e.stderr ? e.stderr.toString().trim() : e.message)); }
+  fs.rmSync(png);
   return fs.statSync(tujuan).size;
 }
 

@@ -4,7 +4,7 @@
 //   node tools/aset/olah.mjs pohon0 batu0    olah resep tertentu saja
 //   node tools/aset/olah.mjs --info <file>   periksa isi sebuah .gltf/.glb (bagian, bahan, jumlah segitiga, ukuran)
 //
-// Sumber diunduh sekali ke tools/aset/sumber/ (boleh dihapus; akan diunduh ulang bila perlu). Butuh macOS (sips).
+// Sumber diunduh sekali ke tools/aset/sumber/ (boleh dihapus; akan diunduh ulang bila perlu). Butuh macOS (sips) dan cwebp (brew install webp).
 // Model buatan sendiri yang tidak bisa diunduh ulang (mis. hasil generator AI) disimpan di tools/aset/buatan/ (ikut git).
 // Variabel lingkungan SUMBER / BUATAN / KELUAR mengganti folder-folder itu (dipakai tools/aset/uji-kerangka.mjs).
 // Satuan keluaran: 1 = 1 tile, Y ke atas, titik asal di kaki objek.
@@ -198,8 +198,8 @@ function tulisModel(nama, lods, bahan, catatan, kerangka) {
 }
 
 function tulisTekstur(nama, src, ukuran, kualitas) {
-  const rel = 't/' + nama + '.jpg';
-  I.simpanJpg(src, path.join(KELUAR, rel), ukuran, kualitas);
+  const rel = 't/' + nama + '.webp';
+  I.simpanWebp(src, path.join(KELUAR, rel), ukuran, kualitas);
   return rel;
 }
 
@@ -330,7 +330,7 @@ async function buatBenteng(nama, r) {
 // Unit/hewan berkerangka: mesh ber-skin + klip animasi dari GLB lokal. Pose istirahat dinormalkan (kaki di y = 0, tinggi r.tinggi);
 // satu grup per bahan, LOD dikurangi proporsional per grup. Bahan yang memakai gambar yang sama berbagi satu tekstur, dan
 // bahan bernama "…_tim" ditandai tim: true — game mengalikannya dengan warna tim (mis. tunik putih gading pekerja).
-// Peta kekasaran/logam glTF (G = kekasaran, B = logam) ditulis sebagai <nama>_orm.jpg dan dicatat di `orm`.
+// Peta kekasaran/logam glTF (G = kekasaran, B = logam) ditulis sebagai <nama>_orm.webp dan dicatat di `orm`.
 async function buatKerangka(nama, r) {
   const file = path.join(SUMBER, r.sumber + '.glb');
   if (!fs.existsSync(file)) throw new Error(nama + ': model belum ada — taruh GLB berkerangka di ' + path.relative(process.cwd(), file));

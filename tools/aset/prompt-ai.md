@@ -86,7 +86,7 @@ hewan liar (19 tulang berawalan `Beast`, tanpa bahan tim):
 1. `blender -b --factory-startup --python tools/aset/blender/<unit>.py -- tools/aset/sumber/<unit>`
    Hasilnya `tools/aset/sumber/<unit>.glb` (berkerangka dan beranimasi) serta pratinjau PNG di folder itu, termasuk
    lembar kontak tiap klip dan pratinjau warna tim.
-2. `node tools/aset/olah.mjs <unit>` → `assets/m/<unit>.bin`, `assets/t/<unit>.jpg` (+ `_orm.jpg`), dan entri manifest.
+2. `node tools/aset/olah.mjs <unit>` → `assets/m/<unit>.bin`, `assets/t/<unit>.webp` (+ `_orm.webp`), dan entri manifest.
    Bagian bertanda tim (baju, muka perisai) masuk bahan `kain_tim` → `tim: true`; game mengalikannya dengan warna tim.
 
 **Alternatif: model dari luar (generator AI) dengan kerangka dan gerak Mixamo.** Alatnya tetap ada dan teruji:
