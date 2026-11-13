@@ -1450,8 +1450,14 @@
   }
 
   // Unit yang memakai model berkerangka dari aset (bila modelnya ada; kalau tidak, rig buatan kode di bawah tetap dipakai).
-  // strike: klip sekali-main yang dipicu saat unit menyerang (pekerja: melempar tombak buruan).
-  const RIGGED = { worker: { model: 'pekerja', strike: 'lempar' }, spear: { model: 'tombak', strike: 'serang' } };
+  // strike: klip sekali-main yang dipicu saat unit menyerang (pekerja: melempar tombak buruan). at: detik kena/lepas pada
+  // klip itu bila tidak bertepatan dengan tangan kanan paling terjulur (yang diukur otomatis).
+  const RIGGED = {
+    worker: { model: 'pekerja', strike: 'lempar' },
+    spear: { model: 'tombak', strike: 'serang' },
+    sword: { model: 'pedang', strike: 'serang' },
+    guard: { model: 'pengawal', strike: 'serang' },
+  };
   const kits = {};
   function rigKit(type) {
     if (type in kits) return kits[type];
@@ -1468,7 +1474,7 @@
     }
     // simulasi sudah menjatuhkan kerusakan/melepas tombak saat serangan dipicu, jadi klip pukul dimulai sesaat sebelum
     // detik kena — yang terlihat adalah hantamannya dan gerak kembalinya
-    const strike = m.klip[R.strike] ? R.strike : null, strikeAt = strike ? Math.max(0, reachTime(m, m.klip[strike]) - 0.12) : 0;
+    const strike = m.klip[R.strike] ? R.strike : null, strikeAt = strike ? Math.max(0, (R.at !== undefined ? R.at : reachTime(m, m.klip[strike])) - 0.12) : 0;
     const kit = kits[type] = { type, m, K, gerak, strike, strikeAt, tint: {}, extras: [] };
     if (type !== 'worker') return kit;
     // pekerja: alat kerja di tangan kanan dan bawaan di punggung — mesh kaku yang menempel pada tulang; geometrinya ditulis
