@@ -50,6 +50,8 @@ const RESEP = {
   // Mixamo lalu digabung di Blender. File itu sengaja di sumber/ (tidak masuk git): isinya animasi mentah Mixamo, yang tidak
   // boleh dibagikan ulang sebagai aset lepas. Selama belum ada, olah semua melewatinya. tinggi: puncak kepala unit buatan kode.
   pekerja: { jenis: 'kerangka', sumber: 'pekerja', lokal: true, tinggi: 0.86, tekstur: 512, lod: [3000] },
+  // Unit manusia lain memakai skala yang sama dengan pekerja (bukan tinggi), supaya tombak/helm tidak mengecilkan badannya.
+  tombak: { jenis: 'kerangka', sumber: 'tombak', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
 };
 const TEKSTUR = {
   rumput: { sumber: 'forrest_ground_01', peta: 'Diffuse', ukuran: 1024, kualitas: 80 },
@@ -311,20 +313,23 @@ async function buatBenteng(nama, r) {
 // Unit/hewan berkerangka: mesh ber-skin + klip animasi dari GLB lokal. Pose istirahat dinormalkan (kaki di y = 0, tinggi r.tinggi);
 // satu grup per bahan, LOD dikurangi proporsional per grup. Bahan yang memakai gambar yang sama berbagi satu tekstur, dan
 // bahan bernama "…_tim" ditandai tim: true — game mengalikannya dengan warna tim (mis. tunik putih gading pekerja).
+// Peta kekasaran/logam glTF (G = kekasaran, B = logam) ditulis sebagai <nama>_orm.jpg dan dicatat di `orm`.
 async function buatKerangka(nama, r) {
   const file = path.join(SUMBER, r.sumber + '.glb');
   if (!fs.existsSync(file)) throw new Error(nama + ': model belum ada — taruh GLB berkerangka di ' + path.relative(process.cwd(), file));
   const k = bacaKerangka(file);
-  normalkanKerangka(k, r.tinggi);
+  normalkanKerangka(k, r.tinggi, r.skala);
   for (const c of k.catatan) console.log('  ' + nama + ': ' + c);
   const daftarBahan = [...new Set(k.bagian.map(b => b.bahan))];
   const mesh = daftarBahan.map(b => satukan(k.bagian.filter(x => x.bahan === b))), total = mesh.reduce((s, m) => s + G.jumlahTri(m), 0);
   const lods = r.lod.map(t => mesh.map((m, i) => ({ mesh: G.sederhanakan(m, t * G.jumlahTri(m) / total), bahan: i })));
-  const tertulis = new Map();
+  const tertulis = new Map(), orm = new Map();
   const bahan = daftarBahan.map(b => {
     if (!b.gbrWarna) throw new Error(nama + ': bahan "' + b.nama + '" tanpa tekstur warna belum didukung');
     if (!tertulis.has(b.gbrWarna.kunci)) tertulis.set(b.gbrWarna.kunci, tulisTekstur(nama + (tertulis.size ? '_' + tertulis.size : ''), b.gbrWarna, r.tekstur, 85));
-    return { jenis: 'tekstur', peta: tertulis.get(b.gbrWarna.kunci), kasar: r.kasar || 0.85, ...(/(^|_)tim(\.|_|$)/i.test(b.nama) ? { tim: true } : {}) };
+    if (b.gbrKasar && !orm.has(b.gbrKasar.kunci)) orm.set(b.gbrKasar.kunci, tulisTekstur(nama + '_orm' + (orm.size ? '_' + orm.size : ''), b.gbrKasar, r.tekstur, 88));
+    return { jenis: 'tekstur', peta: tertulis.get(b.gbrWarna.kunci), kasar: r.kasar || 0.85, ...(b.gbrKasar ? { orm: orm.get(b.gbrKasar.kunci) } : {}),
+      ...(/(^|_)tim(\.|_|$)/i.test(b.nama) ? { tim: true } : {}) };
   });
   const klip = k.klip.filter(c => c.jalur.length).map(c => c.nama + ' ' + c.durasi.toFixed(2) + 's');
   tulisModel(nama, lods, bahan, k.tulang.length + ' tulang; klip: ' + (klip.join(', ') || '-'), k);

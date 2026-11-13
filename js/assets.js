@@ -89,6 +89,7 @@
     const bahan = def.bahan.map(b => {
       if (bersama[b.jenis]) return bersama[b.jenis];
       const m = new THREE.MeshStandardMaterial({ map: tx[b.peta], normalMap: b.normal ? tx[b.normal] : null, roughness: b.kasar, metalness: 0 });
+      if (b.orm) { m.roughnessMap = m.metalnessMap = tx[b.orm]; m.roughness = m.metalness = 1; }   // peta G = kekasaran, B = logam (helm, mata tombak)
       if (b.tim) m.userData.tim = true;                // bahan yang dikalikan warna tim oleh pemakainya (mis. tunik pekerja)
       return m;
     });
@@ -112,7 +113,7 @@
   assets.muat = async function () {
     const man = await ambil('manifest.json', 'json'), perlu = new Map();          // file tekstur → apakah tekstur warna (sRGB)
     for (const t of Object.values(man.tekstur)) perlu.set(t.file, t.warna);
-    for (const d of Object.values(man.model)) for (const b of d.bahan) if (b.jenis === 'tekstur') { perlu.set(b.peta, true); if (b.normal) perlu.set(b.normal, false); }
+    for (const d of Object.values(man.model)) for (const b of d.bahan) if (b.jenis === 'tekstur') { perlu.set(b.peta, true); if (b.normal) perlu.set(b.normal, false); if (b.orm) perlu.set(b.orm, false); }
     const fileTex = [...perlu.keys()], namaModel = Object.keys(man.model);
     const [gbr, bin, langit] = await Promise.all([
       Promise.all(fileTex.map(f => tekstur(f, perlu.get(f)))),

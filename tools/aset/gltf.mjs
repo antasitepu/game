@@ -286,12 +286,12 @@ export function bacaKerangka(file) {
   return { bagian, tulang, ibm, leluhur, klip, catatan };
 }
 
-// Normalkan kerangka hasil bacaKerangka (diubah di tempat): Y ke atas, kaki di y = 0, tengah alas di x = z = 0,
-// tinggi pose istirahat = `tinggi`. Hasil akhirnya setara dengan N · (posisi glTF asli) untuk setiap pose, dengan
+// Normalkan kerangka hasil bacaKerangka (diubah di tempat): Y ke atas, kaki di y = 0, tulang akar di x = z = 0,
+// tinggi pose istirahat = `tinggi`, atau skala tetap `skala` (satuan game per satuan sumber) bila diberikan. Hasil akhirnya setara dengan N · (posisi glTF asli) untuk setiap pose, dengan
 // N = skala seragam + geser. Leluhur non-tulang dilebur ke tulang akar; tulang tidak mendapat skala tambahan
 // (translasi semua tulang dikali σ), sehingga jalur animasi tetap bebas satu sama lain.
 // Vertex disimpan dalam pose istirahat dunia (ternormalkan) dan IBM disesuaikan agar hasil skinning tetap eksak.
-export function normalkanKerangka(k, tinggi) {
+export function normalkanKerangka(k, tinggi, skala) {
   const n = k.tulang.length, lokal = d => matriksTRS(d.t, d.r, d.s), Wr = new Array(n);
   const duniaTulang = i => Wr[i] || (Wr[i] = kali(k.tulang[i].induk < 0 ? k.leluhur[i] : duniaTulang(k.tulang[i].induk), lokal(k.tulang[i])));
   // C: ruang ikat → dunia pada pose istirahat. Bila pose istirahat = pose ikat, nilainya sama untuk semua tulang.
@@ -305,7 +305,9 @@ export function normalkanKerangka(k, tinggi) {
     const p = titik(C, b.pos[v], b.pos[v + 1], b.pos[v + 2]);
     for (let c = 0; c < 3; c++) { if (p[c] < min[c]) min[c] = p[c]; if (p[c] > max[c]) max[c] = p[c]; }
   }
-  const s = tinggi / (max[1] - min[1]), tN = [-(min[0] + max[0]) / 2 * s, -min[1] * s, -(min[2] + max[2]) / 2 * s];
+  // titik asal: di tanah, tepat di bawah tulang akar (bukan tengah kotak: tombak atau perisai tidak boleh menggeser badan)
+  const akar0 = duniaTulang(k.tulang.findIndex(d => d.induk < 0));
+  const s = skala || tinggi / (max[1] - min[1]), tN = [-akar0[12] * s, -min[1] * s, -akar0[14] * s];
   const N = [s, 0, 0, 0, 0, s, 0, 0, 0, 0, s, 0, tN[0], tN[1], tN[2], 1], NC = kali(N, C), NCinv = invers(NC), Nm = matriksNormal(NC);
 
   for (const b of k.bagian) for (let v = 0; v < b.pos.length; v += 3) {
@@ -350,7 +352,7 @@ export function normalkanKerangka(k, tinggi) {
     c.durasi = Math.max(0, ...c.jalur.map(j => j.waktu[j.waktu.length - 1])) - t0;
     c.jalur = c.jalur.filter(j => {
       for (let i = 0; i < j.waktu.length; i++) j.waktu[i] -= t0;
-      const lebar = j.sifat === 'r' ? 4 : 3, eps = j.sifat === 't' ? 1e-5 * tinggi : 1e-5;
+      const lebar = j.sifat === 'r' ? 4 : 3, eps = j.sifat === 't' ? 1e-5 * (max[1] - min[1]) * s : 1e-5;
       const sama = (e, ref) => {
         let d = 0, dNeg = 0;
         for (let c2 = 0; c2 < lebar; c2++) { d = Math.max(d, Math.abs(j.nilai[e + c2] - ref[c2])); dNeg = Math.max(dNeg, Math.abs(j.nilai[e + c2] + ref[c2])); }
