@@ -1457,6 +1457,8 @@
     spear: { model: 'tombak', strike: 'serang' },
     sword: { model: 'pedang', strike: 'serang' },
     guard: { model: 'pengawal', strike: 'serang' },
+    archer: { model: 'pemanah', strike: 'serang', at: 0.58 },      // memanah: saat lepas, tangan kanan justru di belakang
+    ranger: { model: 'pemburu', strike: 'serang', at: 0.58 },
   };
   const kits = {};
   function rigKit(type) {
