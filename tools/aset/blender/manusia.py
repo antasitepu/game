@@ -276,7 +276,7 @@ class Tokoh:
             tabung(bm, [(S + d * u, ry + t, rw + t) for u, ry, rw in ujung], u=Y, w=w, seg=16)             # lengan baju
         self.tambah('tunik', bm, bhn, lebur=(0.007, segitiga, riak), tim=tim)
 
-    def sabuk(self, bhn, juntai=True, lebar=0.02, longgar=0.012, gesper=None):
+    def sabuk(self, bhn, juntai=True, lebar=0.02, longgar=0.012, gesper=None, tim=False):
         z, rx, ry = self.PINGGANG
         bm = bmesh.new()
         tabung(bm, [((0, 0, z - lebar), rx + longgar, ry + longgar), ((0, 0, z + lebar), rx + longgar, ry + longgar)], seg=16, n=2.5)
@@ -284,7 +284,7 @@ class Tokoh:
             elips(bm, (0.05, -ry - longgar - 0.002, z), (0.024, 0.014, 0.022), seg=6, ring=4)
             for dx, pj in ((0.035, 0.11), (0.066, 0.085)):
                 tabung(bm, [((dx, -ry - longgar - 0.006, z - 0.01), 0.011, 0.006), ((dx + 0.004, -ry - longgar - 0.014, z - pj), 0.013, 0.006)], seg=6)
-        self.tambah('sabuk', bm, bhn)
+        self.tambah('sabuk', bm, bhn, tim=tim)
         if gesper:
             bm = bmesh.new()
             elips(bm, (0, -ry - longgar - 0.002, z), (0.022, 0.006, 0.019), seg=8, ring=4)
@@ -376,6 +376,62 @@ class Tokoh:
         bm = bmesh.new()
         tabung(bm, [(g - Y * 0.062, 0.014, 0.012), (g + Y * 0.08, 0.013, 0.011)], u=X, w=Z, seg=6)
         self.tambah('gagang', bm, samak, kaku='RightHand')
+
+    def busur(self, kayu, tali, panjang=1.15):
+        """Busur di tangan kiri: memanjang sepanjang sumbu depan-belakang pose istirahat, melengkung ke arah pergelangan
+        (ke arah pemanah saat lengan dijulurkan); bidangnya sedikit miring supaya tali tidak memotong lengan bawah."""
+        S, d, w = self.LENGAN[1]
+        g, ke_dalam = self.genggam(1) - w * 0.012, (d - w * 0.35).normalized()
+        titik = lambda t: g + Y * (t * panjang / 2) - ke_dalam * (0.15 * panjang / 1.15 * t * t)
+        bm = bmesh.new()
+        tabung(bm, [(titik(t), 0.007 + 0.008 * (1 - abs(t)), 0.006 + 0.007 * (1 - abs(t))) for t in (-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1)], u=w, w=d, seg=6)
+        self.tambah('busur', bm, kayu, kaku='LeftHand')
+        bm = bmesh.new()
+        tabung(bm, [(titik(-1), 0.0025, 0.0025), (titik(1), 0.0025, 0.0025)], u=w, w=d, seg=4)
+        self.tambah('tali_busur', bm, tali, kaku='LeftHand')
+
+    def tabung_panah(self, samak, kayu, bulu):
+        """Tabung anak panah di punggung, miring ke bahu kanan."""
+        a, b = Vector((0.07, 0.150, 0.99)), Vector((-0.13, 0.165, 1.40))
+        sb = (b - a).normalized()
+        u = sb.cross(Y).normalized()
+        v = sb.cross(u)
+        bm = bmesh.new()
+        tabung(bm, [(a, 0.036, 0.030), (b, 0.045, 0.036)], u=u, w=v, seg=10)
+        self.tambah('tabung_panah', bm, samak, kaku='Spine1')
+        bm, bm2 = bmesh.new(), bmesh.new()
+        for du, dv in ((0.014, 0.006), (-0.016, 0.0), (0.0, -0.014)):
+            p = b + u * du + v * dv
+            tabung(bm, [(p - sb * 0.05, 0.004, 0.004), (p + sb * 0.14, 0.004, 0.004)], u=u, w=v, seg=4)
+            tabung(bm2, [(p + sb * 0.075, 0.016, 0.003), (p + sb * 0.135, 0.012, 0.003)], u=u, w=v, seg=4)
+        self.tambah('anak_panah', bm, kayu, kaku='Spine1')
+        self.tambah('bulu_panah', bm2, bulu, kaku='Spine1')
+
+    def tudung(self, bhn, tim=True):
+        """Tudung kain: menutup kepala dan leher, terbuka di wajah."""
+        K = self.K
+        bm = bmesh.new()
+        elips(bm, K + Vector((0, 0.012, 0.006)), (0.090, 0.112, 0.128), seg=16, ring=12)
+        for f in [f for f in bm.faces if (lambda p: p.y < -0.035 and -0.10 < p.z < 0.078)(f.calc_center_median() - K)]:
+            bm.faces.remove(f)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if not v.link_faces], context='VERTS')
+        tabung(bm, [((0, 0.012, 1.475), 0.084, 0.092), ((0, 0.016, 1.408), 0.128, 0.108)], seg=14)         # juntai ke bahu
+        self.tambah('tudung', bm, bhn, tim=tim, kaku='Head')
+
+    def jubah(self, bhn):
+        """Jubah pendek di punggung, dari bahu sampai lutut; mengikuti tulang punggung bawah."""
+        bm = bmesh.new()
+        tabung(bm, [((0, 0.124, 1.40), 0.150, 0.028), ((0, 0.146, 1.20), 0.200, 0.032), ((0, 0.170, 0.90), 0.225, 0.034), ((0, 0.190, 0.56), 0.240, 0.032)], seg=16, n=2.6)
+        self.tambah('jubah', bm, bhn, lebur=(0.008, 260, 0.012), kaku='Spine')
+
+    def topi(self, bhn, bulu):
+        """Topi bertepi dengan sehelai bulu."""
+        bm = bmesh.new()
+        bubut(bm, [(0.092, 1.632), (0.160, 1.626), (0.160, 1.634), (0.098, 1.648), (0.088, 1.710), (0.045, 1.755), (0.004, 1.762)], 14, sumbu=(X * 0.92, Y * 1.05, Z))
+        self.tambah('topi', bm, bhn, kaku='Head')
+        bm = bmesh.new()
+        tabung(bm, [((0.080, 0.020, 1.690), 0.010, 0.003), ((0.100, 0.050, 1.790), 0.017, 0.003), ((0.112, 0.085, 1.880), 0.004, 0.002)], u=Vector((0.8, -0.6, 0)), w=Vector((0.6, 0.8, 0)), seg=4)
+        self.tambah('bulu_topi', bm, bulu, kaku='Head')
 
     # ---- rakit: gabung, kaki ke z = 0, atlas, panggang
     def rakit(self, ukuran=1024):
@@ -639,13 +695,36 @@ def ikat(ob, arm, kaku=None, tiru=None, maks=4):
     """Bobot otomatis (panas tulang) + bagian kaku {tulang: [indeks verteks]} diikat penuh. Hasil: catatan.
     tiru: [(sasaran, sumber, rentang_z)] = verteks sasaran meniru bobot verteks sumber terdekat, supaya dua lapis kain
     bergerak bersama dan lapis dalam tidak menembus keluar; rentang_z (z0, z1): penuh di bawah z0, memudar sampai z1."""
-    sc, catatan = bpy.context.scene, []
+    sc, catatan, me = bpy.context.scene, [], ob.data
+    semua_kaku = {i for idx in (kaku or {}).values() for i in idx}
+    # Bobot otomatis dihitung pada salinan tanpa bagian kaku: benda tipis (tali busur, bulu panah) bisa menggagalkan
+    # hitungan panas tulang untuk seluruh mesh, padahal bagian itu toh diikat penuh ke satu tulang.
+    tmp = ob.copy()
+    tmp.data = me.copy()
+    sc.collection.objects.link(tmp)
+    bm = bmesh.new()
+    bm.from_mesh(tmp.data)
+    bm.verts.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[bm.verts[i] for i in semua_kaku], context='VERTS')
+    bm.to_mesh(tmp.data)
+    bm.free()
     for o in sc.objects:
-        o.select_set(o in (ob, arm))
+        o.select_set(o in (tmp, arm))
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
-    me = ob.data
-    semua_kaku = {i for idx in (kaku or {}).values() for i in idx}
+    for b in arm.data.bones:
+        ob.vertex_groups.new(name=b.name)
+    lentur = [i for i in range(len(me.vertices)) if i not in semua_kaku]      # urutan verteks salinan = urutan ini
+    nama_grup = [g.name for g in tmp.vertex_groups]
+    for v in tmp.data.vertices:
+        for g in v.groups:
+            if g.weight > 0:
+                ob.vertex_groups[nama_grup[g.group]].add([lentur[v.index]], g.weight, 'REPLACE')
+    data_tmp = tmp.data
+    bpy.data.objects.remove(tmp, do_unlink=True)
+    bpy.data.meshes.remove(data_tmp)
+    ob.parent = arm
+    ob.modifiers.new('Armature', 'ARMATURE').object = arm
     kosong = [v.index for v in me.vertices if v.index not in semua_kaku and not any(g.weight > 1e-4 for g in v.groups)]
     if len(kosong) + len(semua_kaku) >= len(me.vertices):
         raise RuntimeError('bobot otomatis gagal untuk seluruh mesh')
@@ -1130,6 +1209,57 @@ def gugur(P, p, senjata=TOMBAK):
         lengan(P, 'Right', -1, turun=lerp(30, 4, b), ayun=-30 * math.sin(math.pi * a) - 8 * b, tekuk=lerp(30, 18, b))
         P.tangan('Right', arah=senjata['diam'][1].slerp(senjata['rebah'], naik(p, 0.1, 0.8)))
     P.campur(lambda P: siaga(P, 0.0, senjata), jatuh, naik(p, 0.0, 0.2))
+
+
+# ---------------------------------------------------------------- gerak: pemanah
+# Busur menempel di tangan kiri sepanjang sumbu depan-belakang pose istirahat; tangan kanan bebas menarik tali.
+BUSUR = {'diam': ((0.30, -0.14, 0.94), bidik((0.10, -0.42, 0.90), (0.25, -0.85, -0.46), k=1)), 'jalan': ((0.30, -0.16, 1.04), bidik((0.10, -0.38, 0.92), (0.20, -0.88, -0.42), k=1)),
+         'lari': ((0.30, -0.20, 1.13), bidik((0.12, -0.30, 0.95), (0.20, -0.92, -0.33), k=1)), 'rebah': bidik((0.35, -0.94, 0), (0.94, 0.35, 0), k=1)}
+LEPAS_PANAH = 0.58                                          # fase klip `panah` saat tali dilepas
+
+
+def siaga_busur(P, p, senjata=BUSUR):
+    diam(P, p)
+    g, q = senjata['diam']
+    P.tangan('Left', genggam=g, arah=Quaternion(X, rad(1.5 * math.sin(4 * math.pi * p + 0.7))) @ q)
+
+
+def jalan_busur(P, p, senjata=BUSUR):
+    jalan(P, p)
+    g, q = senjata['jalan']
+    P.tangan('Left', genggam=Vector(g) + Vector((0, -0.02 * math.cos(2 * math.pi * p), -0.05 - 0.017 * math.cos(4 * math.pi * (p - 0.05)))), arah=q)
+
+
+def lari_busur(P, p, senjata=BUSUR):
+    lari(P, p)
+    g, q = senjata['lari']
+    P.tangan('Left', genggam=Vector(g) + Vector((0, -0.03 * math.sin(2 * math.pi * (p - 0.17)), -0.07 - 0.03 * math.cos(4 * math.pi * (p - 0.17)))), arah=q)
+
+
+def panah(P, p, senjata=BUSUR):
+    """Memanah: badan menyamping dengan bahu kiri ke sasaran, busur diangkat tegak, tali ditarik ke dagu, dilepas di
+    fase LEPAS_PANAH, lalu kembali ke sikap diam."""
+    def bidikan(P):
+        b, c = naik(p, 0.28, 0.52), naik(p, LEPAS_PANAH, LEPAS_PANAH + 0.05)      # tarikan, lepasan
+        P.telapak('Left', (0.03, -0.17, 0), 0, rad(-12))
+        P.telapak('Right', (-0.03, 0.13, 0), 0, rad(-62))
+        P.pinggul((0, 0.0, -0.03), ('Z', rad(-55)), ('X', rad(-2)))
+        P.fk('Spine', ('Z', rad(-8)))
+        P.fk('Spine1', ('Z', rad(-10)), ('X', rad(-3 * b)))
+        P.fk('Neck', ('Z', rad(30)))
+        P.fk('Head', ('Z', rad(40)), ('X', rad(-2)))
+        P.tangan('Left', genggam=(0.10, -0.64, 1.37), arah=bidik((0, 0, 1), (0, -1, 0), k=1))
+        tali, dagu = Vector((0.085, -0.50, 1.37)), Vector((-0.02, 0.03, 1.455))
+        P.tangan('Right', genggam=tali.lerp(dagu, b).lerp(dagu + Vector((-0.05, 0.08, 0.01)), c), siku=Vector((-0.55, 0.55, 1.50)))
+    P.campur(lambda P: siaga_busur(P, 0.0, senjata), bidikan, naik(p, 0.0, 0.30) * (1 - naik(p, 0.72, 1.0)))
+
+
+def gugur_busur(P, p, senjata=BUSUR):
+    """Rebah ke belakang; busur tergeletak di samping badan."""
+    def jatuh(P):
+        mati(P, p)
+        P.tangan('Left', arah=senjata['diam'][1].slerp(senjata['rebah'], naik(p, 0.1, 0.8)))
+    P.campur(lambda P: siaga_busur(P, 0.0, senjata), jatuh, naik(p, 0.0, 0.2))
 
 
 # ---------------------------------------------------------------- pratinjau gerak

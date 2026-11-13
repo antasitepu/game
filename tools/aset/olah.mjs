@@ -54,6 +54,8 @@ const RESEP = {
   tombak: { jenis: 'kerangka', sumber: 'tombak', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
   pedang: { jenis: 'kerangka', sumber: 'pedang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600] },
   pengawal: { jenis: 'kerangka', sumber: 'pengawal', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600] },
+  pemanah: { jenis: 'kerangka', sumber: 'pemanah', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3200] },
+  pemburu: { jenis: 'kerangka', sumber: 'pemburu', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
 };
 const TEKSTUR = {
   rumput: { sumber: 'forrest_ground_01', peta: 'Diffuse', ukuran: 1024, kualitas: 80 },
