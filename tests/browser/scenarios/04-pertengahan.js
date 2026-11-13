@@ -35,16 +35,17 @@ module.exports = async ({ page, check }) => {
   check('klik tombol melatih 2 Pengamuk', await p.ev(`(() => { const b = BF.ui.entities(BF.game.s)[0]; return b.queue.length === ${q0} + 2 && b.queue[b.queue.length - 1].unit === 'berserk'; })()`));
   check('tooltip unit unik tampil', await p.ev(`!document.getElementById('tooltip').classList.contains('hidden') && document.getElementById('tooltip').textContent.includes('Pengamuk')`));
   await p.shot('21-panel-barak');
-  const before = await p.ev(`BF.ui.entities(BF.game.s)[0].queue.length`);
+  // (antrean dibandingkan per butir, bukan per panjang: unit di kepala antrean bisa selesai dilatih di sela-sela tes)
+  const before = await p.ev(`(() => { const q = BF.ui.entities(BF.game.s)[0].queue; window.__last = q[q.length - 1]; return q.length; })()`);
   await p.clickEl('#info-body .q:last-child');
   await p.sleep(350);
-  check('klik chip antrean membatalkan', (await p.ev(`BF.ui.entities(BF.game.s)[0].queue.length`)) === before - 1);
+  check('klik chip antrean membatalkan', await p.ev(`(() => { const q = BF.ui.entities(BF.game.s)[0].queue; return q.indexOf(window.__last) < 0 && q.length <= ${before} - 1; })()`));
 
   // seluruh pasukan → klik kanan minimap di markas musuh
   await p.ev(`(() => { const s = BF.game.s; BF.ui.select(s.units.filter(u => u.owner === 0 && u.type !== 'worker').map(u => u.id)); })()`);
   const n = await p.ev(`BF.ui.sel.length`);
   await p.sleep(200);
-  check('panel pasukan: Gerak-Serang + Berhenti', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 2 && n > 0, n);
+  check('panel pasukan: Gerak-Serang + Berhenti + Berlindung', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 3 && n > 0, n);
   await p.key('a', 'KeyA', 65);
   await p.sleep(100);
   check('A → mode gerak-serang', await p.ev(`BF.ui.amove === true`));

@@ -35,6 +35,9 @@ BF.ANIMALS = {
 // Perbaikan bangunan oleh pekerja: tiap pekerja memulihkan nyawa secepat rate × laju membangun bangunan itu, dan
 // memulihkan nyawa dari nol sampai penuh menghabiskan cost × biaya bangunannya (ditagih sedikit demi sedikit).
 BF.REPAIR = { rate: 0.75, cost: 0.5 };
+// Berlindung: unit berkelas cls boleh masuk ke bangunan sendiri yang punya kapasitas `garrison`. Di dalam, unit tak
+// bisa diserang dan pulih heal nyawa/detik; bangunannya menembak 1 panah tambahan per perArrow unit di dalamnya.
+BF.GARRISON = { cls: ['civil', 'infantry', 'archer'], heal: 0.5, perArrow: 2 };
 // Tombak lempar pekerja saat berburu.
 BF.HUNT = { atk: 4, range: 2.6, cooldown: 1.5 };
 
@@ -151,7 +154,7 @@ BF.UNITS = {
 BF.BUILDINGS = {
   townhall: {
     name: 'Balai Kota', size: 3, era: 0, cost: { wood: 250, stone: 150 }, time: 90, hp: 2400, pop: 5, sight: 8,
-    dropoff: true, trains: ['worker'], atk: 6, range: 6, cooldown: 2,
+    dropoff: true, trains: ['worker'], atk: 6, range: 6, cooldown: 2, garrison: 10,
     desc: 'Pusat permukiman. Melatih Pekerja, menerima setoran, dan meneliti era baru.',
   },
   house: {
@@ -192,7 +195,7 @@ BF.BUILDINGS = {
   },
   tower: {
     name: 'Menara Jaga', size: 1, era: 1, cost: { stone: 100, wood: 40 }, time: 30, hp: 800, sight: 8,
-    atk: 7, range: 7, cooldown: 1.6,
+    atk: 7, range: 7, cooldown: 1.6, garrison: 4,
     desc: 'Menembaki musuh yang mendekat.',
   },
   wall: {

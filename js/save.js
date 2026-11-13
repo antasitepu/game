@@ -56,7 +56,7 @@
       BF.rebuildDefs(p);
     }
     for (const u of s.units) s.byId.set(u.id, u);
-    for (const b of s.buildings) s.byId.set(b.id, b);
+    for (const b of s.buildings) { s.byId.set(b.id, b); if (!b.inside) b.inside = []; }      // simpanan lama: belum ada yang berlindung
     for (const a of s.animals) s.byId.set(a.id, a);
     BF.updateFog(s);
     return s;

@@ -190,5 +190,70 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('AI memperbaiki balai kotanya yang rusak', th3.hp > max3 * 0.5, { dari: Math.round(max3 * 0.3), ke: Math.round(th3.hp) });
 }
 
+// 9. Berlindung: masuk & keluar bangunan, kapasitas, kelas, aman dari serangan, panah tambahan, pulih, simpan/muat,
+//    validasi kepemilikan, dan AI menyembunyikan pekerjanya saat markas diserang
+{
+  const mk = () => { const s = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }); s.animals.length = 0; return s; };
+  const near = (s, b, type, owner, n) => { const out = []; for (let i = 0; i < n; i++) { const f = BF.findFreeNear(s.map, b.tx + b.size + 1, b.ty + b.size + 1 + i, 6, owner); out.push(BF.spawnUnit(s, type, owner, f.x + 0.5, f.y + 0.5)); } return out; };
+  const s = mk(), p = s.players[0], th = s.buildings.find(b => b.owner === 0 && b.type === 'townhall');
+  const ws = s.units.filter(u => u.owner === 0 && u.type === 'worker'), ids = ws.map(u => u.id), pop0 = p.pop;
+  ws[0].hp = 10;
+  BF.exec(s, 1, { c: 'garrison', ids, bid: th.id });
+  check('lawan tidak bisa menyuruh unit kita berlindung', ws.every(u => u.order.type === 'idle'));
+  BF.exec(s, 0, { c: 'garrison', ids, bid: th.id });
+  run(s, 20 * 20);
+  check('pekerja masuk Balai Kota: hilang dari peta, populasi tetap', th.inside.length === 4 && !s.units.some(u => u.owner === 0) && ids.every(id => !s.byId.has(id)) && p.pop === pop0, { dalam: th.inside.length, pop: p.pop });
+  check('unit di dalam pulih perlahan', ws[0].hp > 15 && ws[0].hp <= 30, { hp: ws[0].hp });
+
+  // musuh menyerbu: yang berlindung tak tersentuh, balai kota menembak 1 + 4/2 = 3 panah per tembakan
+  const foes = near(s, th, 'spear', 1, 3);
+  for (const f of foes) BF.setOrder(f, { type: 'attack', tid: th.id });
+  let volley = 0;
+  for (let i = 0; i < 20 * 12; i++) { const n0 = s.projectiles.length; BF.step(s); s.events.length = 0; volley = Math.max(volley, s.projectiles.filter(q => q.dk.k === 'b').length - n0); }
+  check('3 panah per tembakan dengan 4 unit di dalam', volley === 3, { volley });
+  check('unit yang berlindung tidak bisa diserang', th.inside.length === 4 && th.inside.every(u => u.hp > 0));
+  for (const f of foes) if (!f.dead) BF.kill(s, f);
+  run(s, 2);
+
+  const h0 = BF.hash(s), s2 = BF.deserialize(JSON.parse(JSON.stringify(BF.serialize(s)))), th2 = s2.buildings.find(b => b.id === th.id);
+  check('simpan/muat mempertahankan unit yang berlindung', BF.hash(s2) === h0 && th2.inside.length === 4 && !s2.units.some(u => u.owner === 0));
+
+  BF.exec(s, 1, { c: 'ungarrison', bid: th.id });
+  check('lawan tidak bisa mengeluarkan unit kita', th.inside.length === 4);
+  BF.exec(s, 0, { c: 'ungarrison', bid: th.id });
+  run(s, 20 * 2);
+  const out = s.units.filter(u => u.owner === 0);
+  check('keluar: semua unit kembali ke peta di dekat bangunan', th.inside.length === 0 && out.length === 4 && out.every(u => !u.dead && s.byId.get(u.id) === u && BF.distToBuilding(th, u.x, u.y) < 4) && new Set(s.units).size === s.units.length);
+  BF.exec(s2, 0, { c: 'ungarrison', bid: th2.id });
+  run(s2, 20 * 2);
+  check('keluar setelah dimuat dari simpanan tetap identik', BF.hash(s2) === BF.hash(s));
+
+  // menara: kapasitas 4; kavaleri ditolak; bangunan roboh → penghuninya selamat
+  const s3 = mk(), th3 = s3.buildings.find(b => b.owner === 0 && b.type === 'townhall');
+  s3.players[0].popCap = 60;
+  const spot = BF.findFreeNear(s3.map, th3.tx + 6, th3.ty + 6, 8, 0), tw = BF.spawnBuilding(s3, 'tower', 0, spot.x, spot.y, true);
+  const sp = near(s3, tw, 'spear', 0, 6), rd = near(s3, tw, 'rider', 0, 1)[0];
+  let full = false;
+  BF.exec(s3, 0, { c: 'garrison', ids: sp.map(u => u.id).concat(rd.id), bid: tw.id });
+  for (let i = 0; i < 20 * 20; i++) { BF.step(s3); if (s3.events.some(e => e.type === 'garrisonFull' && e.owner === 0)) full = true; s3.events.length = 0; }
+  check('menara menampung 4; sisanya menunggu di luar & pemilik diberi tahu', tw.inside.length === 4 && sp.filter(u => s3.byId.has(u.id)).length === 2 && full, { dalam: tw.inside.length });
+  check('kavaleri tidak bisa berlindung', rd.order.type === 'idle' && s3.byId.has(rd.id));
+  const pop3 = s3.players[0].pop;
+  BF.exec(s3, 0, { c: 'destroy', ids: [tw.id] });
+  run(s3, 20);
+  check('bangunan roboh: unit di dalamnya selamat', sp.every(u => !u.dead && s3.byId.get(u.id) === u) && s3.players[0].pop === pop3 && sane(s3) && new Set(s3.units).size === s3.units.length);
+
+  // AI: pekerja masuk balai kota saat musuh di depan pintu, keluar lagi setelah aman
+  const s4 = mk(), q = s4.players[1], th4 = s4.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+  q.isAI = true;
+  const raid = near(s4, th4, 'spear', 0, 3);
+  for (const u of raid) BF.setOrder(u, { type: 'idle' });
+  run(s4, 20 * 8);
+  const hid = th4.inside.length;
+  for (const u of raid) if (!u.dead) BF.kill(s4, u);
+  run(s4, 20 * 6);
+  check('AI: pekerja berlindung saat diserbu, keluar setelah aman', hid >= 3 && th4.inside.length === 0 && s4.units.filter(u => u.owner === 1 && u.type === 'worker').length >= 4, { berlindung: hid, sesudah: th4.inside.length });
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

@@ -789,10 +789,22 @@
     const on = p => p.x > -60 && p.x < v.w + 60 && p.y > -60 && p.y < v.h + 60;
     for (const b of s.buildings) {
       if (b.dead || !BF.buildingSeen(s, b)) continue;
-      const d = BF.bldDef(s, b), show = !b.built || sel.has(b.id) || b.hp < d.hp;
-      if (!show) continue;
+      const d = BF.bldDef(s, b), show = !b.built || sel.has(b.id) || b.hp < d.hp, hid = b.owner === me ? b.inside.length : 0;
+      if (!show && !hid) continue;
       const p = view.toScreen(b.tx + b.size / 2, b.ty + b.size / 2, view.BUILD_H[b.type] * (b.built ? 1 : 0.5) + 0.25);
-      if (on(p)) hpBar(g, p.x, p.y, Math.max(22, b.size * ppu * 0.42), b.built ? b.hp / d.hp : b.progress);
+      if (!on(p)) continue;
+      if (show) hpBar(g, p.x, p.y, Math.max(22, b.size * ppu * 0.42), b.built ? b.hp / d.hp : b.progress);
+      if (hid) {                                         // penanda jumlah unit yang berlindung (hanya bangunan sendiri)
+        const txt = '⌂ ' + hid + '/' + d.garrison;
+        g.font = '600 11px system-ui, sans-serif';
+        const w = g.measureText(txt).width + 10;
+        g.fillStyle = 'rgba(0,0,0,.72)';
+        g.fillRect(p.x - w / 2, p.y - 19, w, 15);
+        g.fillStyle = '#bfdbfe';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(txt, p.x, p.y - 11);
+      }
     }
     for (const u of s.units) {
       if (u.dead || (u.owner !== me && !fog.visible[idx(u.x | 0, u.y | 0)])) continue;

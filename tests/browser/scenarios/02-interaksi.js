@@ -64,8 +64,7 @@ module.exports = async ({ page, check }) => {
   // perbaiki: rusakkan Balai Kota, klik kanan atapnya dengan pekerja terpilih
   await p.ev(`(() => { const s = BF.game.s, th = s.buildings.find(b => b.type === 'townhall' && b.owner === 0); th.hp = BF.bldDef(s, th).hp / 2; window.__rp = { id: th.id, hp: th.hp, wood: s.players[0].res.wood, w: BF.ui.sel[0] }; })()`);
   await p.ev(H.buildingPoint(`BF.game.s.byId.get(window.__rp.id)`, 0.6));
-  // titik di badan Balai Kota yang tidak tertutup unit/hewan mana pun (peta acak: bisa ada yang berdiri di depannya)
-  const thPt = await p.ev(`(() => { const s = BF.game.s, th = s.byId.get(window.__rp.id), V = BF.view, k = V.ppu(); for (const f of [0.6, 0.75, 0.9, 0.45, 0.3]) for (const dx of [0, -0.6, 0.6]) { const q = V.toScreen(th.tx + 1.5 + dx, th.ty + 1.5 - dx, V.BUILD_H.townhall * f); const r = V.pickStanding(s, q.x, q.y); if (!r || r.b !== th) continue; const hit = s.units.concat(s.animals).some(u => { const a = V.toScreen(u.x, u.y, 0), b = V.toScreen(u.x, u.y, 1.4); return Math.abs(q.x - a.x) < 0.6 * k && q.y > b.y - 8 && q.y < a.y + 10; }); if (!hit) return q; } return null; })()`);
+  const thPt = await p.ev(H.freePoint(`BF.game.s.byId.get(window.__rp.id)`));
   check('ada titik bebas di badan Balai Kota', !!thPt);
   await p.ev(`BF.ui.select([window.__rp.w])`);
   await p.click(thPt.x, thPt.y, 'right');
@@ -73,6 +72,37 @@ module.exports = async ({ page, check }) => {
   check('klik kanan bangunan rusak → perintah perbaiki', await p.ev(`(() => { const o = BF.game.s.byId.get(window.__rp.w).order; return o.type === 'repair' && o.bid === window.__rp.id; })()`));
   await step(20 * 15);
   check('perbaikan memulihkan nyawa & memakai kayu', await p.ev(`(() => { const s = BF.game.s, th = s.byId.get(window.__rp.id); return th.hp > window.__rp.hp + 100 && s.players[0].res.wood < window.__rp.wood; })()`), await p.ev(`({ hp: Math.round(BF.game.s.byId.get(window.__rp.id).hp), kayu: BF.game.s.players[0].res.wood })`));
+
+  // berlindung: G lalu klik Balai Kota → pekerja masuk; G pada bangunan → keluar; Alt + klik kanan → berlindung
+  // (pekerja yang berdiri di samping bangunan langsung masuk, jadi "sedang menuju" dan "sudah di dalam" sama-sama sah)
+  const TH = 'BF.game.s.byId.get(window.__rp.id)';
+  const going = `(() => { const u = BF.game.s.byId.get(window.__rp.w); return !BF.ui.garrison && (u ? u.order.type === 'garrison' && u.order.bid === window.__rp.id : ${TH}.inside.some(q => q.id === window.__rp.w)); })()`;
+  await p.ev(`BF.ui.select([window.__rp.w])`);
+  await p.key('g', 'KeyG', 71);
+  await p.sleep(80);
+  check('G menyalakan mode berlindung', await p.ev(`BF.ui.garrison === true`));
+  let gp = await p.ev(H.freePoint(TH));
+  await p.click(gp.x, gp.y);
+  await p.sleep(100);
+  check('klik Balai Kota → perintah berlindung', await p.ev(going));
+  await step(20 * 8);
+  await p.ev(`BF.ui.select([window.__rp.id])`);
+  await p.sleep(400);
+  check('pekerja masuk & panel menampilkan 1/10', await p.ev(`${TH}.inside.length === 1 && !BF.game.s.byId.has(window.__rp.w) && document.getElementById('info-body').textContent.includes('Berlindung: 1/10')`), await p.ev(`document.getElementById('info-body').textContent`));
+  await p.shot('06-berlindung');
+  await p.key('g', 'KeyG', 71);
+  await p.sleep(200);
+  check('G pada bangunan mengeluarkan semua', await p.ev(`${TH}.inside.length === 0 && BF.game.s.byId.has(window.__rp.w)`));
+  await p.ev(`BF.ui.select([window.__rp.w])`);
+  await p.sleep(150);
+  gp = await p.ev(H.freePoint(TH));
+  await p.click(gp.x, gp.y, 'right', { modifiers: 1 });
+  await p.sleep(100);
+  check('Alt + klik kanan → perintah berlindung', await p.ev(going));
+  await step(20 * 4);
+  await p.ev(`BF.exec(BF.game.s, 0, { c: 'ungarrison', bid: window.__rp.id })`);
+  await p.sleep(150);
+  await p.ev(`BF.ui.select([window.__rp.w])`);
 
   // serang: munculkan tombak milik pemain dan satu musuh pasif, lalu klik kanan musuh
   await p.ev(`(() => { const s = BF.game.s, th = s.buildings[0]; s.players[1].isAI = false; const a = BF.findFreeNear(s.map, th.tx + 5, th.ty + 5, 6); const me = BF.spawnUnit(s, 'spear', 0, a.x + 0.5, a.y + 0.5); const b = BF.findFreeNear(s.map, a.x + 3, a.y, 6); const foe = BF.spawnUnit(s, 'worker', 1, b.x + 0.5, b.y + 0.5); BF.updateFog(s); window.__t = { me: me.id, foe: foe.id }; BF.ui.select([me.id]); BF.input.centerOn(me.x, me.y); })()`);

@@ -100,8 +100,10 @@
 
   // ---------------------------------------------------------------- perintah
 
-  function command(s, t) {
+  // alt: Alt + klik kanan pada bangunan sendiri yang berkapasitas = berlindung di sana.
+  function command(s, t, alt) {
     const me = s.human, units = ownUnits(s);
+    if (alt && units.length && t.e && t.e.kind === 'building' && t.e.owner === me && BF.bldDef(s, t.e).garrison) { garrisonAt(s, t); return; }
     if (!units.length) {
       const b = ui.entities(s)[0];
       if (b && b.kind === 'building' && b.owner === me && b.built) {
@@ -145,6 +147,27 @@
     }
     move(units);
     ping(t.x, t.y, '#86efac');
+  }
+
+  // Mode berlindung (tombol/tombol G): klik kiri berikutnya memilih bangunan tujuan.
+  input.garrisonMode = function () {
+    const s = game().s, cls = BF.GARRISON.cls;
+    if (!ownUnits(s).some(u => cls.indexOf(U[u.type].cls) >= 0)) return hud.fail('Unit ini tidak bisa berlindung');
+    endPlacing(false);
+    ui.amove = false;
+    ui.garrison = true;
+  };
+
+  // Suruh unit terpilih berlindung di bangunan pada sasaran t (Balai Kota / Menara Jaga milik sendiri yang sudah jadi).
+  function garrisonAt(s, t) {
+    const b = t.e;
+    ui.garrison = false;
+    if (!b || b.kind !== 'building' || b.owner !== s.human || !b.built || !BF.bldDef(s, b).garrison) return hud.fail('Pilih Balai Kota atau Menara Jaga milikmu');
+    const us = ownUnits(s).filter(u => BF.canGarrison(s, u, b));
+    if (!us.length) return hud.fail('Unit ini tidak bisa berlindung');
+    BF.issue({ c: 'garrison', ids: idsOf(us), bid: b.id });
+    ping(b.tx + b.size / 2, b.ty + b.size / 2, '#93c5fd');
+    BF.audio.play('order');
   }
 
   function attackMove(s, t) {
@@ -294,7 +317,7 @@
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     switch (e.key) {
       case 'Escape':
-        if (ui.placing || ui.amove) { endPlacing(false); ui.amove = false; }
+        if (ui.placing || ui.amove || ui.garrison) { endPlacing(false); ui.amove = ui.garrison = false; }
         else if (ui.sel.length) ui.select([]);
         else BF.menu.openGameMenu();
         return;
@@ -312,6 +335,7 @@
       }
       case '.': input.nextIdleWorker(); return;
       case 'h': case 'H': selectTownhall(s); return;
+      case 'g': case 'G': if (ownUnits(s).length) { input.garrisonMode(); return; } break;      // bangunan terpilih: tombol "Keluarkan semua"
       case 'p': case 'P': g.togglePause(); return;
     }
     if (e.key.length === 1 && hud.pressKey(e.key.toUpperCase())) e.preventDefault();
@@ -338,7 +362,7 @@
     if (!ui.placing) ui.ghosts = [];
     else if (ui.wallStart) ui.ghosts = wallGhosts(s, w.x, w.y);
     else ui.ghosts = m.onMap ? [ghostAt(s, w.x, w.y)] : [];
-    g.canvas.style.cursor = rotating ? 'grabbing' : ui.placing ? 'copy' : ui.amove ? 'crosshair' : 'default';
+    g.canvas.style.cursor = rotating ? 'grabbing' : ui.placing ? 'copy' : ui.amove ? 'crosshair' : ui.garrison ? 'alias' : 'default';
   };
 
   input.init = function (canvas, minimap) {
@@ -352,10 +376,11 @@
         if (ui.placing === 'wall') { ui.wallStart = { x: Math.floor(w.x), y: Math.floor(w.y) }; ui.ghosts = wallGhosts(s, w.x, w.y); }
         else if (ui.placing) { ui.ghosts = [ghostAt(s, w.x, w.y)]; place(s, e.shiftKey); }
         else if (ui.amove) attackMove(s, targetAt(s, e.clientX, e.clientY));
+        else if (ui.garrison) garrisonAt(s, targetAt(s, e.clientX, e.clientY));
         else ui.drag = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
       } else if (e.button === 2) {
-        if (ui.placing || ui.amove) { endPlacing(false); ui.amove = false; }
-        else command(s, targetAt(s, e.clientX, e.clientY));
+        if (ui.placing || ui.amove || ui.garrison) { endPlacing(false); ui.amove = ui.garrison = false; }
+        else command(s, targetAt(s, e.clientX, e.clientY), e.altKey);
       }
     });
     canvas.addEventListener('wheel', e => {

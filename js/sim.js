@@ -143,7 +143,7 @@
     const b = {
       id: s.nextId++, kind: 'building', type, owner, tx, ty, size: d.size,
       hp: built ? d.hp : 1, built: !!built, progress: built ? 1 : 0,
-      queue: [], rally: null, cd: 0, worker: 0, dead: false,
+      queue: [], rally: null, cd: 0, worker: 0, inside: [], dead: false,
     };
     const blockVal = d.walkable ? 0 : d.gate ? 2 + owner : 1;
     for (let y = ty; y < ty + d.size; y++)
@@ -190,6 +190,7 @@
           if (map.bld[i] === t.id) { map.bld[i] = 0; map.block[i] = 0; }
         }
       map.version++;
+      BF.ungarrison(s, t, true);                           // yang berlindung selamat, muncul di bekas tapak bangunan
       if (t.built) p.popCap -= d.pop || 0;
       for (const q of t.queue) {
         if (q.era) p.eraQueued = false;
@@ -215,7 +216,7 @@
     const mix = v => { h ^= v | 0; h = Math.imul(h, 16777619) >>> 0; };
     mix(s.tick); mix(s.nextId); mix(s.rng);
     for (const u of s.units) { mix(u.id); mix(Math.round(u.x * 1000)); mix(Math.round(u.y * 1000)); mix(Math.round(u.hp * 100)); }
-    for (const b of s.buildings) { mix(b.id); mix(Math.round(b.hp * 100)); mix(Math.round(b.progress * 1000)); }
+    for (const b of s.buildings) { mix(b.id); mix(Math.round(b.hp * 100)); mix(Math.round(b.progress * 1000)); mix(b.inside.length); }
     for (const a of s.animals) { mix(a.id); mix(Math.round(a.x * 1000)); mix(Math.round(a.y * 1000)); mix(Math.round(a.hp * 100)); mix(a.food); }
     for (const p of s.players) { for (const r of BF.RES) mix(Math.round(p.res[r])); mix(p.pop); mix(p.era); mix(p.techs.length); }
     return h;
@@ -790,6 +791,63 @@
     u.dir = Math.atan2(b.ty + b.size / 2 - u.y, b.tx + b.size / 2 - u.x);
   }
 
+  // ---------------------------------------------------------------- berlindung
+  //
+  // Unit yang berlindung dikeluarkan dari s.units dan s.byId lalu disimpan di b.inside (ikut tersimpan bersama bangunan).
+  // Selama di dalam, u.dead = true supaya semua loop unit (pencarian sasaran, pemisahan, AI, render) melewatinya tanpa
+  // perlu tahu soal berlindung. Ini bukan kematian: populasi tetap dan unit dikembalikan apa adanya saat keluar.
+
+  BF.canGarrison = function (s, u, b) {
+    return !!BD(s, b).garrison && b.built && !b.dead && b.owner === u.owner && BF.GARRISON.cls.indexOf(UD(s, u).cls) >= 0;
+  };
+
+  function enter(s, u, b) {
+    const p = s.players[u.owner];
+    if (u.carry > 0 && BF.BUILDINGS[b.type].dropoff) { p.res[u.carryType] += u.carry; p.gathered += u.carry; u.carry = 0; }
+    u.order = { type: 'idle' };
+    u.path = null;
+    u.moving = u.working = false;
+    u.dead = true;
+    s.hasDead = true;
+    s.byId.delete(u.id);
+    b.inside.push(u);
+  }
+
+  // Keluarkan semua unit yang berlindung di b; mengembalikan jumlah yang keluar. Bila tak ada tile bebas di sekeliling
+  // bangunan, unit tetap di dalam. scatter: bangunannya roboh → unit muncul di bekas tapaknya.
+  BF.ungarrison = function (s, b, scatter) {
+    const stay = [];
+    let n = 0;
+    b.inside.forEach((u, i) => {
+      let x, y;
+      if (scatter) { x = b.tx + 0.5 + i % b.size; y = b.ty + 0.5 + ((i / b.size) | 0) % b.size; }
+      else {
+        const t = exitTile(s, b);
+        if (!t) { stay.push(u); return; }
+        x = t.x + 0.5; y = t.y + 0.5;
+      }
+      u.dead = false;
+      u.x = x; u.y = y;
+      if (s.units.indexOf(u) < 0) s.units.push(u);         // baru masuk di tick yang sama: masih ada di daftar
+      s.byId.set(u.id, u);
+      n++;
+    });
+    b.inside = stay;
+    return n;
+  };
+
+  function updateGarrison(s, u, d, o) {
+    const b = s.byId.get(o.bid);
+    if (!b || !BF.canGarrison(s, u, b)) { setIdle(u); return; }
+    if (travel(s, u, o, BF.bRect(b, 1), d.speed) !== 2) return;
+    if (BF.distToBuilding(b, u.x, u.y) < 1.7) {
+      if (b.inside.length < BD(s, b).garrison) { enter(s, u, b); return; }
+      const p = s.players[u.owner];
+      if (s.tick - (p.fullWarn || -1e9) > 100) { p.fullWarn = s.tick; s.events.push({ type: 'garrisonFull', owner: u.owner, x: u.x, y: u.y }); }
+    }
+    setIdle(u);
+  }
+
   // ---------------------------------------------------------------- update
 
   function updateUnit(s, u) {
@@ -824,6 +882,7 @@
       case 'gather': updateGather(s, u, d, o); break;
       case 'build': updateBuild(s, u, d, o); break;
       case 'repair': updateRepair(s, u, d, o); break;
+      case 'garrison': updateGarrison(s, u, d, o); break;
     }
   }
 
@@ -861,7 +920,8 @@
     }
   }
 
-  function spawnFromBuilding(s, b, type) {
+  // Tile bebas di sekeliling bangunan (cincin 1–3 tile) yang paling dekat ke titik kumpul, atau ke depan bangunan.
+  function exitTile(s, b) {
     const rx = b.rally ? b.rally.x : b.tx + b.size / 2, ry = b.rally ? b.rally.y : b.ty + b.size + 1;
     let best = null, bd = 1e9;
     for (let r = 1; r <= 3 && !best; r++) {
@@ -874,6 +934,11 @@
           if (dd < bd) { bd = dd; best = { x, y }; }
         }
     }
+    return best;
+  }
+
+  function spawnFromBuilding(s, b, type) {
+    const best = exitTile(s, b);
     if (!best) return null;
     const u = BF.spawnUnit(s, type, b.owner, best.x + 0.5, best.y + 0.5);
     const r = b.rally;
@@ -911,18 +976,24 @@
         }
       }
     }
+    for (const u of b.inside) { const max = p.U[u.type].hp; if (u.hp < max) u.hp = Math.min(max, u.hp + BF.GARRISON.heal * DT); }
     if (d.atk) {
       b.cd -= DT;
       if (b.cd <= 0) {
-        const cx = b.tx + b.size / 2, cy = b.ty + b.size / 2;
-        let best = null, bd = d.range;
+        // satu panah ke musuh terdekat, + satu panah per GARRISON.perArrow unit yang berlindung, dibagi ke musuh-musuh
+        // terdekat berikutnya (berputar bila panahnya lebih banyak daripada musuhnya)
+        const cx = b.tx + b.size / 2, cy = b.ty + b.size / 2, foes = [];
         for (const t of s.units) {
           if (t.owner === b.owner || t.dead) continue;
           const dd = dist(t.x - cx, t.y - cy);
-          if (dd < bd) { bd = dd; best = t; }
+          if (dd < d.range) foes.push({ t, dd });
         }
-        if (best) { spawnProjectile(s, cx, cy, best, d, { k: 'b', t: b.type, o: b.owner }, b.id); b.cd = d.cooldown; }
-        else b.cd = 0.4;
+        if (foes.length) {
+          foes.sort((a, c) => a.dd - c.dd || a.t.id - c.t.id);
+          const n = 1 + Math.floor(b.inside.length / BF.GARRISON.perArrow);
+          for (let i = 0; i < n; i++) spawnProjectile(s, cx + (i - (n - 1) / 2) * 0.12, cy, foes[i % foes.length].t, d, { k: 'b', t: b.type, o: b.owner }, b.id);
+          b.cd = d.cooldown;
+        } else b.cd = 0.4;
       }
     }
   }

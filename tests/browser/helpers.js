@@ -12,6 +12,10 @@ module.exports = {
   // Titik di badan unit dengan id hasil ekspresi `idExpr`.
   unitPoint: idExpr => `(() => { const u = BF.game.s.byId.get(${idExpr}); return BF.view.toScreen(u.x, u.y, 0.45); })()`,
 
+  // Titik di badan bangunan `expr` yang kena bangunan itu dan tidak tertutup unit/hewan mana pun (peta acak: bisa ada
+  // yang berdiri di depannya). Kamera tidak digeser. null bila tidak ada.
+  freePoint: expr => `(() => { const s = BF.game.s, b = ${expr}, V = BF.view, k = V.ppu(), c = b.size / 2; for (const f of [0.6, 0.75, 0.9, 0.45, 0.3]) for (const dx of [0, -0.2 * b.size, 0.2 * b.size]) { const q = V.toScreen(b.tx + c + dx, b.ty + c - dx, V.BUILD_H[b.type] * f); const r = V.pickStanding(s, q.x, q.y); if (!r || r.b !== b) continue; const hit = s.units.concat(s.animals).some(u => { const a = V.toScreen(u.x, u.y, 0), t = V.toScreen(u.x, u.y, 1.4); return Math.abs(q.x - a.x) < 0.6 * k && q.y > t.y - 8 && q.y < a.y + 10; }); if (!hit) return q; } return null; })()`,
+
   // Titik di badan bangunan hasil ekspresi `expr` (kamera dipusatkan dulu ke bangunan itu). frac = bagian tinggi bangunan.
   buildingPoint: (expr, frac) => `new Promise(res => requestAnimationFrame(() => requestAnimationFrame(() => { const b = ${expr}; if (!b) return res(null); BF.input.centerOn(b.tx + b.size / 2, b.ty + b.size / 2); res(BF.view.toScreen(b.tx + b.size / 2, b.ty + b.size / 2, BF.view.BUILD_H[b.type] * ${frac || 0.4})); })))`,
 

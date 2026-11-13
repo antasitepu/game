@@ -12,7 +12,7 @@
 
   // State interaksi pemain (seleksi, mode penempatan, dsb). Dibaca juga oleh render & input.
   const ui = BF.ui = {
-    sel: [], placing: null, amove: false, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
+    sel: [], placing: null, amove: false, garrison: false, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
     mouse: { x: 0, y: 0, inside: false, onMap: false },
   };
   const hud = BF.hud = { buttons: [], sig: '', hover: -1, infoAt: 0, portraitKey: '', text: {}, ERR, endNote: '', waitSince: 0 };
@@ -23,6 +23,7 @@
     ui.placing = null;
     ui.wallStart = null;
     ui.amove = false;
+    ui.garrison = false;
     hud.infoAt = 0;
   };
   ui.reset = function () {
@@ -79,6 +80,7 @@
             ui.placing = t;
             ui.wallStart = null;
             ui.amove = false;
+            ui.garrison = false;
           },
         };
       });
@@ -86,9 +88,14 @@
       slots[4] = {
         glyph: '⚔', title: 'Gerak-Serang', active: ui.amove,
         desc: 'Lalu klik kiri pada peta: pasukan bergerak ke sana sambil menyerang musuh yang ditemui.',
-        action() { ui.amove = true; ui.placing = null; },
+        action() { ui.amove = true; ui.garrison = false; ui.placing = null; },
       };
       slots[5] = stop;
+      slots[6] = {
+        glyph: '⌂', key: 'G', title: 'Berlindung', active: ui.garrison,
+        desc: 'Lalu klik kiri Balai Kota atau Menara Jaga milikmu: unit masuk, aman dari serangan, dan bangunan itu menembak lebih banyak panah. Bisa juga Alt + klik kanan.',
+        action() { BF.input.garrisonMode(); },
+      };
     } else if (own.length === 1 && own[0].kind === 'building') {
       const b = own[0];
       if (b.built) {
@@ -103,6 +110,12 @@
               if (!BF.canAfford(p, next.cost)) return hud.fail(ERR.res);
               BF.issue({ c: 'era', bid: b.id });
             },
+          };
+        if (p.B[b.type].garrison)
+          slots[10] = {
+            glyph: '⇱', key: 'G', title: 'Keluarkan semua', disabled: !b.inside.length,
+            desc: 'Semua unit yang berlindung di bangunan ini keluar.',
+            action() { BF.issue({ c: 'ungarrison', bid: b.id }); hud.infoAt = 0; },
           };
         const put = btn => { while (slots[i]) i++; if (i < 11) slots[i++] = btn; };
         for (const ut of BF.trainable(p, b.type)) {
@@ -268,6 +281,8 @@
           const n = s.units.filter(u => !u.dead && u.owner === me && u.order.type === 'repair' && u.order.bid === e.id).length;
           html += n ? `<div class="status">Sedang diperbaiki · ${n} pekerja</div>` : '<div class="status warn">Rusak — pilih pekerja lalu klik kanan bangunan ini untuk memperbaiki</div>';
         }
+        if (e.built && e.owner === me && d.garrison)
+          html += `<div class="status">Berlindung: ${e.inside.length}/${d.garrison} unit${e.inside.length ? '' : ' · pilih unit, tekan G, lalu klik bangunan ini'}</div>`;
         if (e.built && e.owner === me) {
           if (e.queue.length) {
             html += '<div class="queue">' + e.queue.map((q, i) => {
@@ -304,6 +319,7 @@
       else if (e.type === 'era') hud.toast(e.owner === me ? 'Kita memasuki ' + BF.ERAS[e.era].name + '!' : 'Musuh memasuki ' + BF.ERAS[e.era].name);
       else if (e.type === 'tech' && e.owner === me) hud.toast('Riset selesai: ' + BF.TECHS[e.tech].name);
       else if (e.type === 'repairStop' && e.owner === me) hud.toast('Perbaikan berhenti: ' + ERR.res.toLowerCase());
+      else if (e.type === 'garrisonFull' && e.owner === me) hud.toast('Bangunan penuh');
       else if (e.type === 'over') hud.showEnd(s, e.resigned);
     }
     s.events.length = 0;

@@ -61,6 +61,15 @@
         if (u.type === 'worker' && u.carry > 0) BF.setOrder(u, { type: 'gather', state: 'return', drop: b.id, last: true, res: u.carryType });
     },
 
+    // Berlindung di bangunan sendiri yang berkapasitas (balai kota, menara); kelas yang tak diizinkan diabaikan.
+    garrison(s, units, b) {
+      for (const u of units) if (BF.canGarrison(s, u, b)) BF.setOrder(u, { type: 'garrison', bid: b.id });
+    },
+
+    ungarrison(s, b) {
+      return BF.ungarrison(s, b);
+    },
+
     stop(s, units) {
       for (const u of units) BF.setOrder(u, { type: 'idle' });
     },
@@ -176,6 +185,8 @@
       case 'farm': { const f = own(c.bid, 'building'); if (f && f.type === 'farm' && f.built) BF.cmd.farm(s, units(), f); break; }
       case 'build': { const b = own(c.bid, 'building'); if (b && !b.built) BF.cmd.build(s, units(), b); break; }
       case 'repair': { const b = own(c.bid, 'building'); if (b && b.built) BF.cmd.repair(s, units(), b); break; }
+      case 'garrison': { const b = own(c.bid, 'building'); if (b) BF.cmd.garrison(s, units(), b); break; }
+      case 'ungarrison': { const b = own(c.bid, 'building'); if (b) BF.cmd.ungarrison(s, b); break; }
       case 'dropoff': { const b = own(c.bid, 'building'); if (b && b.built && BF.BUILDINGS[b.type].dropoff) BF.cmd.dropoff(s, units(), b); break; }
       case 'stop': BF.cmd.stop(s, units()); break;
       case 'place': {

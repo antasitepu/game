@@ -116,11 +116,38 @@
     }
   }
 
+  // Berlindung: bila ≥ 2 pasukan musuh berada dalam 7 tile dari balai kota, pekerja di sekitarnya (≤ 8 tile) masuk ke
+  // balai kota — aman, dan balai kota menembak lebih banyak panah. Begitu tak ada musuh dalam 10 tile, semuanya keluar
+  // (pekerja yang keluar menganggur, lalu dibagi kerja lagi oleh economy()).
+  function shelter(s, p, c, th) {
+    if (!th) return;
+    const cx = th.tx + th.size / 2, cy = th.ty + th.size / 2;
+    let near = 0, far = 0;
+    for (const u of s.units) {
+      if (u.owner === p.id || u.dead || !BF.unitDef(s, u).atk) continue;
+      const d = dist(u.x - cx, u.y - cy);
+      if (d < 7) near++;
+      if (d < 10) far++;
+    }
+    if (near >= 2) {
+      const room = p.B.townhall.garrison - th.inside.length - c.hiding;
+      const ws = c.workers.filter(w => dist(w.x - cx, w.y - cy) < 8).slice(0, Math.max(0, room));
+      if (!ws.length) return;
+      BF.cmd.garrison(s, ws, th);
+      c.workers = c.workers.filter(w => ws.indexOf(w) < 0);
+      c.idle = c.idle.filter(w => ws.indexOf(w) < 0);
+      c.hiding += ws.length;
+    } else if (!far && th.inside.length) BF.cmd.ungarrison(s, th);
+  }
+
+  // hiding: pekerja yang sedang berjalan untuk berlindung; hidden: pekerja yang sudah di dalam bangunan. Keduanya tidak
+  // masuk c.workers (jangan diberi tugas lain) tetapi tetap dihitung sebagai pekerja yang dimiliki.
   function census(s, p) {
-    const c = { workers: [], army: [], idle: [], cnt: { food: 0, wood: 0, gold: 0, stone: 0 }, own: {}, pending: [], types: {} };
+    const c = { workers: [], army: [], idle: [], cnt: { food: 0, wood: 0, gold: 0, stone: 0 }, own: {}, pending: [], types: {}, hiding: 0, hidden: 0 };
     for (const u of s.units) {
       if (u.owner !== p.id || u.dead) continue;
-      if (u.type === 'worker') {
+      if (u.type === 'worker' && u.order.type === 'garrison') c.hiding++;
+      else if (u.type === 'worker') {
         c.workers.push(u);
         if (u.order.type === 'idle') c.idle.push(u);
         else if (u.order.type === 'gather') c.cnt[u.order.res]++;
@@ -132,6 +159,7 @@
     for (const b of s.buildings) {
       if (b.owner !== p.id || b.dead) continue;
       (c.own[b.type] || (c.own[b.type] = [])).push(b);
+      for (const u of b.inside) if (u.type === 'worker') c.hidden++;
       if (!b.built) c.pending.push(b);
       for (const q of b.queue) if (q.unit && q.unit !== 'worker') c.types[q.unit] = (c.types[q.unit] || 0) + 1;
     }
@@ -304,7 +332,8 @@
       ai.dirX = dx / l; ai.dirY = dy / l;
     }
     const underAttack = s.tick - p.lastHitTick < 160;
-    const total = c.workers.length;
+    shelter(s, p, c, th);
+    const total = c.workers.length + c.hiding + c.hidden;
 
     for (const b of c.pending) {
       if (c.workers.some(w => w.order.type === 'build' && w.order.bid === b.id)) continue;
