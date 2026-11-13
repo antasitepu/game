@@ -31,6 +31,17 @@ from timber, bamboo, river stone and thatch*. Jangan menyebut nama game, film, a
 
 ## Bangunan
 
+**Percontohan lewat skrip Blender (Pasar).** `tools/aset/blender/pasar.py` + pustaka `bangunan.py` membangun satu
+bangunan utuh tanpa tekstur sendiri: tiap bagian memakai kunci bahan bangunan game (`planks`, `stone`, `clay`, `flat`, …)
+dengan UV berskala dunia, rona dan bayangan lembut dipanggang ke warna per-vertex, dan bagian bertanda tim memakai bahan
+`<kunci>_tim`. Belum dipakai game; asetnya tidak ikut `olah semua`:
+
+1. `blender -b --factory-startup --python tools/aset/blender/pasar.py -- tools/aset/sumber/pasar`
+2. `node tools/aset/olah.mjs pasar` → `assets/m/pasar.bin` + entri manifest (`kunci`, `tim`, `tapak`, `badan` di
+   `BF.assets.model.pasar`; bahannya dipasang pemakai dari `BF.tex.mat[kunci]`).
+
+Prompt di bawah adalah jalur lain (generator AI), belum pernah dipakai.
+
 Ukuran tapak dalam tile (1 tile ≈ lebar dua orang dewasa). Warna tim (biru/merah) ditambahkan game — minta atap
 berwarna netral.
 

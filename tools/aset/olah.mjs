@@ -61,6 +61,10 @@ const RESEP = {
   // Unit berkuda: kuda dan penunggang satu mesh dan satu kerangka (40 tulang); titik asal di tanah di bawah HorseRoot.
   penunggang: { jenis: 'kerangka', sumber: 'penunggang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
   pemanah_kuda: { jenis: 'kerangka', sumber: 'pemanah_kuda', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
+  // Bangunan rakitan buatan skrip Blender (percontohan): satuan sumber = tile, titik asal di tanah di tengah tapak.
+  // tapak: sisi denah (tile); badan: [x0, z0, x1, z1, tinggi cucuran] per bagian dalam koordinat sudut tapak, untuk perancah.
+  // Belum dipakai game: asetnya tidak ikut `olah semua` (percontohan: true) dan dibuat hanya bila resepnya disebut.
+  pasar: { jenis: 'rakitan', sumber: 'pasar', lokal: true, percontohan: true, tapak: 3, badan: [[0.2, 0.3, 2.8, 1.76, 1.0]], lod: [1] },
   // Hewan liar: kerangka berkaki empat berawalan Beast, tanpa bahan tim; skala sama dengan unit manusia.
   rusa: { jenis: 'kerangka', sumber: 'rusa', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800] },
   rusa_jantan: { jenis: 'kerangka', sumber: 'rusa_jantan', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1900] },
@@ -348,7 +352,24 @@ async function buatKerangka(nama, r) {
   tulisModel(nama, lods, bahan, k.tulang.length + ' tulang; klip: ' + (klip.join(', ') || '-'), k);
 }
 
-const PEMBANGUN = { pohon: buatPohon, padat: buatPadat, semak: buatSemak, rumput: buatRumput, benteng: buatBenteng, kerangka: buatKerangka };
+// Bangunan rakitan dari GLB lokal: satu grup per bahan. Nama bahan = kunci pustaka bahan bangunan game (BF.tex.mat:
+// planks, stone, clay, thatch, flat, …), akhiran "_tim" = bagian yang diwarnai tim (ditaruh di indeks 1). UV berskala dunia
+// (1 = 1 tile, tekstur berulang), warna per-vertex = rona × bayangan lembut; tanpa tekstur sendiri. lod: bagian segitiga.
+async function buatRakitan(nama, r) {
+  const file = path.join(SUMBER, r.sumber + '.glb');
+  if (!fs.existsSync(file)) throw new Error(nama + ': model belum ada — taruh GLB di ' + path.relative(process.cwd(), file));
+  const bagian = bacaGltf(file), nama_b = [...new Set(bagian.map(b => b.bahan.nama))];
+  const tim = nama_b.filter(k => /_tim$/.test(k)), biasa = nama_b.filter(k => !/_tim$/.test(k)).sort((a, b) => (a === 'planks' ? -1 : b === 'planks' ? 1 : 0));
+  const urut = biasa.length ? [biasa[0], ...tim, ...biasa.slice(1)] : tim;
+  const mesh = urut.map(k => satukan(bagian.filter(b => b.bahan.nama === k)));
+  if (mesh.some(m => !m.col || !m.uv)) throw new Error(nama + ': tiap bahan butuh UV dan warna per-vertex (COLOR_0)');
+  const lods = r.lod.map(f => mesh.map((m, i) => ({ mesh: f >= 1 ? m : G.sederhanakan(m, f * G.jumlahTri(m)), bahan: i })));
+  const bahan = urut.map(k => ({ jenis: 'bangunan', kunci: k.replace(/_tim$/, ''), ...(/_tim$/.test(k) ? { tim: true } : {}) }));
+  tulisModel(nama, lods, bahan, 'bahan: ' + urut.join(', '));
+  Object.assign(manifest.model[nama], { tapak: r.tapak, badan: r.badan });
+}
+
+const PEMBANGUN = { pohon: buatPohon, padat: buatPadat, semak: buatSemak, rumput: buatRumput, benteng: buatBenteng, kerangka: buatKerangka, rakitan: buatRakitan };
 
 // ---------------------------------------------------------------- info
 
@@ -384,6 +405,7 @@ else {
   console.log('Model:');
   for (const nama of semua ? Object.keys(RESEP) : args) {
     const r = RESEP[nama];
+    if (semua && r.percontohan) continue;
     if (semua && r.lokal && !fs.existsSync(path.join(SUMBER, r.sumber + '.glb'))) { console.log('  ' + nama.padEnd(9) + ' dilewati: sumber/' + r.sumber + '.glb belum ada'); continue; }
     await PEMBANGUN[r.jenis](nama, r);
   }

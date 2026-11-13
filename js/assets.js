@@ -88,12 +88,15 @@
     });
     const bahan = def.bahan.map(b => {
       if (bersama[b.jenis]) return bersama[b.jenis];
+      if (b.jenis === 'bangunan') return null;         // bahan pustaka bangunan (BF.tex.mat[kunci]): dipasang pemakainya, lihat `kunci` di bawah
       const m = new THREE.MeshStandardMaterial({ map: tx[b.peta], normalMap: b.normal ? tx[b.normal] : null, roughness: b.kasar, metalness: 0 });
       if (b.orm) { m.roughnessMap = m.metalnessMap = tx[b.orm]; m.roughness = m.metalness = 1; }   // peta G = kekasaran, B = logam (helm, mata tombak)
       if (b.tim) m.userData.tim = true;                // bahan yang dikalikan warna tim oleh pemakainya (mis. tunik pekerja)
       return m;
     });
-    return Object.assign({ lod, bahan, tinggi: def.tinggi, radius: def.radius }, def.kerangka ? bangunKerangka(def, buf) : null);
+    // bangunan rakitan: kunci[i] = kunci bahan grup ke-i, tim[i] = diwarnai tim; tapak & badan untuk penempatan dan perancah
+    const rakitan = def.badan ? { kunci: def.bahan.map(b => b.kunci), tim: def.bahan.map(b => !!b.tim), tapak: def.tapak, badan: def.badan } : null;
+    return Object.assign({ lod, bahan, tinggi: def.tinggi, radius: def.radius }, def.kerangka ? bangunKerangka(def, buf) : null, rakitan);
   }
 
   // Langit: byte RGBE (baris 0 = bawah) → tekstur equirectangular half-float.

@@ -149,7 +149,8 @@ function buka(file) {
   });
   const POLOS = { nama: '', alpha: 'OPAQUE', duaSisi: false, warna: [1, 1, 1, 1], kasar: 1, logam: 0, gbrWarna: null, gbrNormal: null, gbrKasar: null, uvT: null };
 
-  // Satu primitive segitiga → { bahan, pos, nor, uv, idx } dalam ruang lokal mesh; M (opsional) diterapkan ke posisi & normal.
+  // Satu primitive segitiga → { bahan, pos, nor, uv, idx, col } dalam ruang lokal mesh; M (opsional) diterapkan ke posisi & normal.
+  // col (bila ada COLOR_0): warna per-vertex, diubah dari linear glTF ke sRGB 0..1 (konvensi mesh.mjs).
   function primitive(pr, M) {
     if (pr.mode !== undefined && pr.mode !== 4) return null;
     if (pr.extensions && pr.extensions.KHR_draco_mesh_compression) throw new Error('mesh terkompresi Draco belum didukung');
@@ -158,6 +159,15 @@ function buka(file) {
     const uv = pr.attributes.TEXCOORD_0 !== undefined ? aksesor(pr.attributes.TEXCOORD_0) : null;
     const idx = pr.indices !== undefined ? aksesor(pr.indices, true) : Uint32Array.from({ length: nv }, (_, k) => k);
     const mat = pr.material !== undefined ? bahan[pr.material] : POLOS;
+    let col = null;
+    if (pr.attributes.COLOR_0 !== undefined) {
+      const c = aksesor(pr.attributes.COLOR_0), n = JUMLAH[json.accessors[pr.attributes.COLOR_0].type];
+      col = new Float32Array(nv * 3);
+      for (let k = 0; k < nv; k++) for (let j = 0; j < 3; j++) {
+        const x = Math.min(1, Math.max(0, c[k * n + j]));
+        col[k * 3 + j] = x <= 0.0031308 ? x * 12.92 : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+      }
+    }
     if (M) {
       const Nm = matriksNormal(M);
       for (let k = 0; k < nv; k++) {
@@ -179,7 +189,7 @@ function buka(file) {
       }
       uv[k * 2] = u; uv[k * 2 + 1] = 1 - v;
     }
-    return { bahan: mat, pos, nor, uv, idx };
+    return { bahan: mat, pos, nor, uv, idx, col };
   }
 
   const induk = new Array(json.nodes.length).fill(-1);
