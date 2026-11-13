@@ -69,6 +69,8 @@ BF.NODES = {
 BF.SLOTS = [
   { label: 'Biru', color: '#3b82f6', dark: '#1e3a8a', light: '#bfdbfe' },
   { label: 'Merah', color: '#ef4444', dark: '#7f1d1d', light: '#fecaca' },
+  { label: 'Kuning', color: '#d4a017', dark: '#713f12', light: '#fde68a' },
+  { label: 'Toska', color: '#14b8a6', dark: '#134e4a', light: '#99f6e4' },
 ];
 
 BF.ERAS = [

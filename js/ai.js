@@ -421,7 +421,15 @@
     c.hx = anchor.tx + anchor.size / 2;
     c.hy = anchor.ty + anchor.size / 2;
     c.region = map.region[idx(anchor.tx, anchor.ty)];
-    const foe = s.buildings.find(b => b.owner !== p.id && !b.dead && !BF.BUILDINGS[b.type].barrier);
+    // arah hadap markas: ke bangunan tertua milik musuh yang terdekat (dengan dua pemain: bangunan pertama lawan)
+    let foe = null, fd = 1e9;
+    const seen = {};
+    for (const b of s.buildings) {
+      if (b.owner === p.id || b.dead || BF.BUILDINGS[b.type].barrier || seen[b.owner]) continue;
+      seen[b.owner] = 1;
+      const d = dist(b.tx - c.hx, b.ty - c.hy);
+      if (d < fd) { fd = d; foe = b; }
+    }
     if (foe) {
       const dx = foe.tx - c.hx, dy = foe.ty - c.hy, l = dist(dx, dy) || 1;
       ai.dirX = dx / l; ai.dirY = dy / l;

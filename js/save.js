@@ -70,7 +70,7 @@
     write(slot, s) {
       try {
         const p = s.players[s.human];
-        const meta = { time: Date.now(), tick: s.tick, faction: p.faction, foe: s.players[1 - s.human].faction, difficulty: s.difficulty, era: p.era };
+        const meta = { time: Date.now(), tick: s.tick, faction: p.faction, foe: (s.players.find(q => q.id !== s.human) || p).faction, players: s.players.length, difficulty: s.difficulty, era: p.era };
         localStorage.setItem(KEY[slot], JSON.stringify({ meta, data: BF.serialize(s) }));
         return true;
       } catch (e) { return false; }

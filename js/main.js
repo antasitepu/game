@@ -38,12 +38,12 @@
     $('btn-speed').textContent = v + '×';
   }
 
-  // opts: {state} untuk memuat simpanan, atau {difficulty, factions, seed, mp, human} untuk permainan baru.
+  // opts: {state} untuk memuat simpanan, atau {difficulty, factions, players, seed, mp, human} untuk permainan baru.
   game.start = function (opts) {
     BF.audio.unlock();
     const s = game.s = opts.state || BF.newGame({
-      difficulty: opts.difficulty, factions: opts.factions, seed: opts.seed, mp: opts.mp, human: opts.human,
-      ai: opts.mp ? [false, false] : [false, true],
+      difficulty: opts.difficulty, factions: opts.factions, players: opts.players, seed: opts.seed, mp: opts.mp, human: opts.human,
+      ai: opts.mp ? [false, false] : BF.SLOTS.map((q, i) => i > 0),
     });
     game.running = true;
     game.menuOpen = false;
@@ -58,8 +58,8 @@
     for (const id of ['overlay-start', 'overlay-end', 'overlay-help', 'overlay-menu']) $(id).classList.add('hidden');
     $('btn-speed').classList.toggle('hidden', s.mp);
     $('btn-pause').classList.toggle('hidden', s.mp);
-    const foe = s.players[1 - s.human];
-    BF.hud.toast(opts.state ? 'Permainan dimuat.' : 'Kumpulkan sumber daya, bangun pasukan, robohkan markas ' + foe.name + '!');
+    const foes = s.players.filter(p => p.id !== s.human);
+    BF.hud.toast(opts.state ? 'Permainan dimuat.' : 'Kumpulkan sumber daya, bangun pasukan, robohkan markas ' + (foes.length === 1 ? foes[0].name : 'semua lawan') + '!');
   };
 
   game.stop = function () {

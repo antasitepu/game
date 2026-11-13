@@ -78,7 +78,9 @@
     }
   }
 
-  BF.createMap = function (seed) {
+  // players: jumlah pemain (2–4). Dua pemain menempati dua sudut berseberangan; tiga/empat pemain menempati sudut-sudut
+  // peta dengan urutan acak.
+  BF.createMap = function (seed, players) {
     const rand = BF.makeRng(seed);
     const map = {
       size: N,
@@ -94,8 +96,15 @@
       version: 0,
     };
     const e = 15, f = N - 16;
-    const starts = rand() < 0.5 ? [{ x: e, y: f }, { x: f, y: e }] : [{ x: e, y: e }, { x: f, y: f }];
-    if (rand() < 0.5) starts.reverse();
+    let starts;
+    if (!(players > 2)) {
+      starts = rand() < 0.5 ? [{ x: e, y: f }, { x: f, y: e }] : [{ x: e, y: e }, { x: f, y: f }];
+      if (rand() < 0.5) starts.reverse();
+    } else {
+      starts = [{ x: e, y: e }, { x: f, y: e }, { x: f, y: f }, { x: e, y: f }];
+      for (let i = starts.length - 1; i > 0; i--) { const j = (rand() * (i + 1)) | 0, t = starts[i]; starts[i] = starts[j]; starts[j] = t; }
+      starts.length = Math.min(players, starts.length);
+    }
     map.starts = starts;
     const nearStart = (x, y, r) => starts.some(s => BF.dist(x - s.x, y - s.y) < r);
 
@@ -163,9 +172,10 @@
     scatter(BF.N_STONE, 5, 5);
     scatter(BF.N_BERRY, 5, 5);
 
-    // Jamin kedua markas terhubung lewat darat; kalau tidak, buka jalur lurus.
-    if (!reachable(map, starts[0], starts[1])) {
-      const a = starts[0], b = starts[1], steps = N * 2;
+    // Jamin semua markas terhubung lewat darat (ke markas pertama); kalau tidak, buka jalur lurus.
+    for (let n = 1; n < starts.length; n++) {
+      if (reachable(map, starts[0], starts[n])) continue;
+      const a = starts[0], b = starts[n], steps = N * 2;
       for (let k = 0; k <= steps; k++) {
         const x = Math.round(a.x + (b.x - a.x) * k / steps), y = Math.round(a.y + (b.y - a.y) * k / steps);
         for (let dy = -1; dy <= 1; dy++)

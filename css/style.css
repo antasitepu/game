@@ -146,6 +146,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .row2 { display: grid; grid-template-columns: 1fr 1.5fr; gap: 12px; text-align: left; margin-bottom: 14px; }
 .row2 .choices { margin-bottom: 0; }
+.row2.one { grid-template-columns: 1fr; }
 select, input[type=text] { width: 100%; height: 36px; padding: 0 10px; font: inherit; color: #ece5d2; background: #2a2117; border: 1px solid #7d6642; border-radius: 6px; }
 select:focus, input[type=text]:focus { outline: 2px solid #c9a45c; outline-offset: 0; }
 #mp-connect, #mp-lobby { text-align: left; }
@@ -195,8 +196,11 @@ td:first-child { color: #f4dfa0; font-weight: 600; white-space: nowrap; }
 #tut-close { padding: 2px 8px; font-size: 12px; color: #b9ad90; background: transparent; border: 1px solid #5d4c33; border-radius: 5px; }
 #tut-close:hover { color: #ece5d2; border-color: #7d6642; }
 
-/* layar akhir: tabel statistik dua pemain + grafik skor */
+/* layar akhir: tabel statistik para pemain + grafik skor (.many: tiga atau empat pemain, tabel lebih lebar) */
 .card.end { width: min(1000px, 100%); }
+.card.end.many { width: min(1180px, 100%); }
+.stats-end.many { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+.stats-end.many .end-table td, .stats-end.many .end-table th { white-space: nowrap; }
 .card.end .tagline { margin-bottom: 14px; }
 .stats-end { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; margin-bottom: 16px; text-align: left; color: #b9ad90; }
 .end-time { margin-bottom: 8px; }
@@ -211,9 +215,9 @@ td:first-child { color: #f4dfa0; font-weight: 600; white-space: nowrap; }
 .end-table tr.sub td:first-child { padding-left: 14px; }
 .end-note { margin-top: 10px; font-size: 12px; line-height: 1.45; }
 .end-chart { position: relative; padding: 10px 12px 6px; background: #1c150e; border: 1px solid #4a3b26; border-radius: 8px; }
-.ec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 4px; }
-.ec-title { font-weight: 600; color: #ece5d2; }
-.ec-legend { display: flex; gap: 14px; color: #b9ad90; font-size: 12px; }
+.ec-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 12px; margin-bottom: 4px; }
+.ec-title { font-weight: 600; color: #ece5d2; white-space: nowrap; }
+.ec-legend { display: flex; gap: 14px; color: #b9ad90; font-size: 12px; white-space: nowrap; }
 .ec-legend i, .ec-tip i { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; border-radius: 1px; }
 .end-chart svg { display: block; width: 100%; height: auto; }
 .end-chart svg text { font-size: 11px; fill: #b9ad90; font-variant-numeric: tabular-nums; }

@@ -569,5 +569,118 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('formasi di tengah jalan ikut tersimpan (lanjut setelah muat identik)', BF.hash(s) === BF.hash(s2));
 }
 
+// 15. Lebih dari dua pemain (semua lawan semua): peta 3–4 markas, pemain tumbang, pemenang terakhir, AI, simpan/muat
+{
+  const main = b => b.type !== 'farm' && !BF.BUILDINGS[b.type].barrier;
+  const raze = (s, pid) => { for (const b of s.buildings.slice()) if (b.owner === pid && !b.dead) BF.kill(s, b); };
+  const mapHash = m => { let h = 0; for (let i = 0; i < m.terrain.length; i++) h = (Math.imul(h, 31) + m.terrain[i] * 7 + m.node[i]) | 0; return h; };
+
+  // dua pemain: tidak berubah (opsi players kosong / 2 menghasilkan permainan yang sama persis)
+  const a2 = BF.newGame({ seed: 31, factions: ['bara', 'rimba'] }), b2 = BF.newGame({ seed: 31, players: 2, factions: ['bara', 'rimba'] });
+  check('players kosong = 2 pemain, peta & keadaan awal identik', a2.players.length === 2 && b2.players.length === 2 && mapHash(a2.map) === mapHash(b2.map) && BF.hash(a2) === BF.hash(b2) && JSON.stringify(a2.map.starts) === JSON.stringify(b2.map.starts));
+  check('jumlah pemain dibatasi 2–4', BF.newGame({ seed: 5, players: 9 }).players.length === 4 && BF.newGame({ seed: 5, players: 1 }).players.length === 2 && BF.newGame({ seed: 5, players: 3 }).players.length === 3);
+
+  // peta 3 dan 4 pemain: tiap pemain punya markas sendiri di sudut berbeda, saling terhubung lewat darat, sumber daya adil
+  let okStart = true, okRes = true, okLink = true;
+  const detail = [];
+  for (const n of [3, 4]) for (let seed = 1; seed <= 6; seed++) {
+    const s = BF.newGame({ seed: seed * 13, players: n }), m = s.map, th = s.players.map(p => s.buildings.find(b => b.owner === p.id && b.type === 'townhall'));
+    okStart = okStart && s.players.length === n && th.every(Boolean) && new Set(m.starts.map(q => q.x + ',' + q.y)).size === n &&
+      s.players.every(p => s.units.filter(u => u.owner === p.id && u.type === 'worker').length === BF.START_WORKERS) && new Set(s.players.map(p => p.color)).size === n;
+    const reg = m.region[BF.idx(th[0].tx, th[0].ty + 3)];
+    okLink = okLink && th.every(b => m.region[BF.idx(b.tx, b.ty + 3)] === reg);
+    for (const st of m.starts) {
+      const near = type => { let c = 0; for (let y = st.y - 14; y <= st.y + 14; y++) for (let x = st.x - 14; x <= st.x + 14; x++) if (BF.inBounds(x, y) && m.node[BF.idx(x, y)] === type) c++; return c; };
+      const r = [near(BF.N_BERRY), near(BF.N_GOLD), near(BF.N_STONE), near(BF.N_TREE)];
+      if (r[0] < 4 || r[1] < 4 || r[2] < 3 || r[3] < 20) { okRes = false; detail.push({ n, seed: seed * 13, r }); }
+    }
+  }
+  check('3–4 pemain: tiap pemain punya Balai Kota, pekerja awal, sudut & warna berbeda', okStart);
+  check('3–4 pemain: semua markas terhubung lewat darat', okLink);
+  check('3–4 pemain: beri, emas, batu, pohon tersedia di dekat tiap markas', okRes, detail.slice(0, 3));
+  {
+    const s = BF.newGame({ seed: 8, players: 4 }), h = BF.newGame({ seed: 8, players: 4, human: 2 });
+    check('tanpa opsi ai: semua selain pemain manusia dipegang AI', s.players.map(p => +p.isAI).join('') === '0111' && h.players.map(p => +p.isAI).join('') === '1101');
+  }
+
+  // pemain tumbang: miliknya musnah, permainan berlanjut sampai tinggal satu
+  {
+    const s = BF.newGame({ seed: 21, players: 3, ai: [false, false, false] });
+    const sp = BF.spawnUnit(s, 'spear', 2, s.map.starts[2].x + 4.5, s.map.starts[2].y + 4.5), w2 = s.units.filter(u => u.owner === 2).length;
+    raze(s, 2);
+    run(s, 21);
+    const ev = s.events;      // (run mengosongkan events; cek lewat keadaan)
+    check('pemain tanpa bangunan utama tumbang, permainan berlanjut', s.players[2].out === true && !s.over && !s.players[0].out && !s.players[1].out);
+    check('seluruh unit & bangunan pemain tumbang musnah', w2 > 3 && s.units.every(u => u.owner !== 2) && s.buildings.every(b => b.owner !== 2) && sp.dead, { sisa: s.units.filter(u => u.owner === 2).length });
+    check('musnah karena tumbang tidak dihitung kalah tempur', s.players[2].stat.lostU === 0);
+    const w0 = s.units.find(u => u.owner === 0), th2 = s.map.starts[2];
+    BF.exec(s, 2, { c: 'move', ids: [w0.id], x: 50, y: 50 });
+    const res2 = JSON.stringify(s.players[2].res);
+    BF.exec(s, 2, { c: 'place', type: 'house', tx: th2.x + 4, ty: th2.y + 4, ids: [] });
+    check('perintah dari pemain tumbang diabaikan', w0.order.type !== 'move' && s.buildings.every(b => b.owner !== 2) && JSON.stringify(s.players[2].res) === res2);
+    raze(s, 1);
+    run(s, 21);
+    check('tinggal satu pemain → permainan selesai, ia menang', s.over && s.winner === 0 && s.players[1].out && !s.players[0].out);
+  }
+  {
+    // peristiwa: 'defeat' saat tumbang (permainan lanjut), 'over' saat selesai
+    const s = BF.newGame({ seed: 22, players: 4, ai: [false, false, false, false] });
+    raze(s, 3);
+    for (let i = 0; i < 21; i++) BF.step(s);
+    const d = s.events.filter(e => e.type === 'defeat'), o = s.events.filter(e => e.type === 'over');
+    check("peristiwa 'defeat' untuk pemain tumbang, belum 'over'", d.length === 1 && d[0].pid === 3 && d[0].resigned === false && o.length === 0, d);
+    s.events.length = 0;
+    BF.resign(s, 1);
+    const d2 = s.events.filter(e => e.type === 'defeat');
+    check('menyerah dengan 3 pemain tersisa: tumbang, permainan lanjut', s.players[1].out && !s.over && d2.length === 1 && d2[0].pid === 1 && d2[0].resigned === true && s.units.every(u => u.owner !== 1 || u.dead));
+    BF.resign(s, 1);
+    check('menyerah dua kali tidak berpengaruh', s.events.filter(e => e.type === 'defeat').length === 1);
+    s.events.length = 0;
+    BF.resign(s, 0);
+    const o2 = s.events.filter(e => e.type === 'over');
+    check('menyerah saat tinggal dua: selesai, pemain terakhir menang', s.over && s.winner === 2 && o2.length === 1 && o2[0].resigned === 0 && o2[0].winner === 2);
+  }
+  {
+    const s = BF.newGame({ seed: 23, players: 3, ai: [false, false, false] });
+    for (const p of s.players) raze(s, p.id);
+    run(s, 21);
+    check('semua tumbang bersamaan → selesai tanpa pemenang', s.over && s.winner === -1);
+    const d = BF.newGame({ seed: 23, factions: ['bara', 'rimba'], ai: [false, false] });
+    BF.resign(d, 1);
+    const o = d.events.filter(e => e.type === 'over');
+    check('dua pemain: menyerah tetap langsung selesai (tanpa pemusnahan)', d.over && d.winner === 0 && o.length === 1 && o[0].resigned === 1 && d.units.some(u => u.owner === 1) && d.events.every(e => e.type !== 'defeat'));
+  }
+
+  // AI: tiap AI menghadap musuh terdekat; AI pemain tumbang berhenti berpikir
+  {
+    const s = BF.newGame({ seed: 24, players: 4, ai: [true, true, true, true], difficulty: 'normal' });
+    run(s, 60);
+    const st = s.map.starts;
+    const okDir = s.players.every(p => {
+      let best = -1, bd = 1e9;
+      for (const q of s.players) if (q !== p) { const d = BF.dist(st[q.id].x - st[p.id].x, st[q.id].y - st[p.id].y); if (d < bd - 1) { bd = d; best = q.id; } }
+      const vx = st[best].x - st[p.id].x, vy = st[best].y - st[p.id].y, l = BF.dist(vx, vy);
+      // dua tetangga sama jauh (sudut bersebelahan): arah hadap harus menuju salah satunya, bukan sudut seberang (diagonal)
+      return p.ai && Math.abs(p.ai.dirX) + Math.abs(p.ai.dirY) > 0.9 && Math.abs(Math.abs(p.ai.dirX) - Math.abs(p.ai.dirY)) > 0.5;
+    });
+    check('4 AI: tiap AI menghadap markas tetangga (bukan sudut seberang)', okDir, s.players.map(p => p.ai && [+p.ai.dirX.toFixed(2), +p.ai.dirY.toFixed(2)]));
+  }
+
+  // pertandingan penuh 3 dan 4 AI: selesai dengan satu pemenang, simpan/muat di tengah jalan tetap identik
+  for (const [n, seed, diff] of [[3, 3, 'hard'], [4, 5, 'normal']]) {
+    const s = BF.newGame({ seed, players: n, ai: [true, true, true, true].slice(0, n), difficulty: diff });
+    run(s, 20 * 60 * 10);
+    const b = BF.deserialize(JSON.parse(JSON.stringify(BF.serialize(s))));
+    let same = BF.hash(s) === BF.hash(b) && b.players.length === n;
+    for (let i = 0; i < 20 * 60 * 4 && same && !s.over; i++) { BF.step(s); BF.step(b); s.events.length = b.events.length = 0; if (i % 200 === 0) same = BF.hash(s) === BF.hash(b); }
+    check(n + ' AI: simpan/muat di menit 10 lalu lanjut 4 menit tetap identik', same && BF.hash(s) === BF.hash(b), { tick: s.tick });
+    const t0 = Date.now();
+    run(s, 20 * 60 * 120);
+    const w = s.players[s.winner];
+    check(n + ' AI semua lawan semua selesai dengan satu pemenang', s.over && !!w && !w.out && s.players.filter(p => !p.out).length === 1 && sane(s) && s.units.every(u => !s.players[u.owner].out) && s.hist.every(r => r.length === n),
+      { pemenang: w && w.faction, menit: (s.tick / 1200).toFixed(0), tumbang: s.players.filter(p => p.out).length, msPerTick: ((Date.now() - t0) / Math.max(1, s.tick - 16800)).toFixed(2), unitMaks: s.units.length });
+  }
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

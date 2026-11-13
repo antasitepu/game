@@ -105,7 +105,8 @@
   BF.newGame = function (opts) {
     opts = opts || {};
     const seed = opts.seed !== undefined ? opts.seed : (Math.random() * 2147483647) | 0;
-    const map = BF.createMap(seed);
+    const count = BF.clamp(opts.players | 0 || 2, 2, BF.SLOTS.length);
+    const map = BF.createMap(seed, count);
     const s = {
       seed, map, tick: 0, nextId: 1, rng: (seed ^ 0x5bd1e995) | 0,
       units: [], buildings: [], animals: [], projectiles: [], effects: [], events: [],
@@ -113,16 +114,17 @@
       difficulty: opts.difficulty || 'normal', mp: !!opts.mp,
       fog: { explored: new Uint8Array(N * N), visible: new Uint8Array(N * N), version: 0 },
       market: Object.assign({}, BF.MARKET.base),
-      hist: [],                                            // riwayat skor: [skor pemain 0, skor pemain 1] tiap BF.SCORE.every tick
+      hist: [],                                            // riwayat skor: [skor tiap pemain] tiap BF.SCORE.every tick
     };
-    const ai = opts.ai || [false, true], fkeys = Object.keys(BF.FACTIONS);
-    for (let i = 0; i < 2; i++) {
+    // tanpa opts.ai: dua pemain = pemain 0 manusia melawan AI; lebih dari dua = semua selain pemain manusia dipegang AI
+    const ai = opts.ai || (count === 2 ? [false, true] : BF.SLOTS.map((q, i) => i !== s.human)), fkeys = Object.keys(BF.FACTIONS);
+    for (let i = 0; i < count; i++) {
       const slot = BF.SLOTS[i], faction = (opts.factions && opts.factions[i]) || fkeys[(BF.rnd(s) * fkeys.length) | 0];
       const p = {
         id: i, faction, name: BF.FACTIONS[faction].name, color: slot.color, dark: slot.dark, light: slot.light,
         res: Object.assign({}, BF.START_RES), era: 0, eraQueued: false, techs: [], techQ: {}, pop: 0, popCap: 0,
         isAI: !!ai[i], ai: null, alertTick: -9999, alertX: 0, alertY: 0, lastHitTick: -9999, lastHitX: 0, lastHitY: 0,
-        kills: 0, losses: 0, gathered: 0, stat: BF.newStat(),
+        kills: 0, losses: 0, gathered: 0, stat: BF.newStat(), out: false,
       };
       BF.rebuildDefs(p);
       s.players.push(p);
@@ -215,11 +217,30 @@
     }
   };
 
+  // Pemain tumbang (kehilangan semua bangunan utamanya, atau menyerah: resigned = id-nya). Bila yang bertahan tinggal
+  // satu, permainan selesai dan ia menang. Bila masih dua atau lebih, permainan berlanjut dan seluruh milik pemain yang
+  // tumbang musnah (tidak dihitung sebagai kekalahan tempur siapa pun).
+  function fall(s, pids, resigned) {
+    for (const pid of pids) s.players[pid].out = true;
+    const left = s.players.filter(p => !p.out);
+    // selesai juga bila, di permainan tunggal, pemain manusianya yang tumbang (tanpa pemenang; para AI tidak diteruskan)
+    const alone = !s.mp && !s.players[s.human].isAI && pids.indexOf(s.human) >= 0;
+    if (left.length <= 1 || alone) {
+      s.over = true;
+      s.winner = left.length === 1 ? left[0].id : -1;
+      s.events.push(resigned !== undefined ? { type: 'over', winner: s.winner, resigned } : { type: 'over', winner: s.winner });
+      return;
+    }
+    for (const pid of pids) {
+      for (const b of s.buildings.slice()) if (b.owner === pid && !b.dead) BF.kill(s, b, true);      // yang berlindung keluar dulu…
+      for (const u of s.units.slice()) if (u.owner === pid && !u.dead) BF.kill(s, u, true);          // …lalu ikut gugur
+      s.events.push({ type: 'defeat', pid, resigned: resigned === pid });
+    }
+  }
+
   BF.resign = function (s, pid) {
-    if (s.over) return;
-    s.over = true;
-    s.winner = 1 - pid;
-    s.events.push({ type: 'over', winner: s.winner, resigned: pid });
+    if (s.over || !s.players[pid] || s.players[pid].out) return;
+    fall(s, [pid], pid);
   };
 
   // Checksum state untuk mendeteksi desinkronisasi multiplayer.
@@ -1101,19 +1122,17 @@
 
   // Kalah bila tidak punya bangunan lagi (ladang, tembok, dan gerbang tidak dihitung).
   function checkVictory(s) {
-    const alive = [0, 0];
+    const alive = s.players.map(() => 0);
     for (const b of s.buildings) if (!b.dead && b.type !== 'farm' && !BF.BUILDINGS[b.type].barrier) alive[b.owner]++;
-    if (alive[0] && alive[1]) return;
-    s.over = true;
-    s.winner = alive[0] ? 0 : alive[1] ? 1 : -1;
-    s.events.push({ type: 'over', winner: s.winner });
+    const fell = s.players.filter(p => !p.out && !alive[p.id]).map(p => p.id);
+    if (fell.length) fall(s, fell);
   }
 
   BF.step = function (s) {
     if (s.over) return;
     s.tick++;
     const think = BF.DIFF[s.difficulty].think;
-    for (const p of s.players) if (p.isAI && (s.tick + p.id * 7) % think === 0) BF.aiThink(s, p);
+    for (const p of s.players) if (p.isAI && !p.out && (s.tick + p.id * 7) % think === 0) BF.aiThink(s, p);
     for (const u of s.units) if (!u.dead) updateUnit(s, u);
     for (const a of s.animals) if (!a.dead) updateAnimal(s, a);
     separate(s);

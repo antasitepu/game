@@ -218,7 +218,7 @@
   // Jalankan perintah berbentuk data atas nama pemain `pid`. Semua id divalidasi: pemain hanya
   // bisa memerintah miliknya sendiri. Perintah yang tidak valid diabaikan tanpa efek.
   BF.exec = function (s, pid, c) {
-    if (!c || typeof c !== 'object' || s.over) return;
+    if (!c || typeof c !== 'object' || s.over || !s.players[pid] || s.players[pid].out) return;
     const num = v => typeof v === 'number' && isFinite(v);
     const own = (id, kind) => {
       const e = s.byId.get(id);

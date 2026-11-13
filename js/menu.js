@@ -4,7 +4,7 @@
   const $ = id => document.getElementById(id);
   const show = (id, on) => $(id).classList.toggle('hidden', !on);
   const net = BF.net, audio = BF.audio;
-  const menu = BF.menu = { mode: 'ai', faction: 'samudra', foe: 'random', difficulty: 'normal', inLobby: false, peerHere: false, peer: null, wasPaused: false };
+  const menu = BF.menu = { mode: 'ai', faction: 'samudra', foe: 'random', foes: 1, difficulty: 'normal', inLobby: false, peerHere: false, peer: null, wasPaused: false };
   const game = () => BF.game;
   const fkeys = Object.keys(BF.FACTIONS);
 
@@ -62,9 +62,15 @@
     return true;
   }
 
+  // Satu lawan: wangsanya bisa dipilih. Dua atau tiga lawan: wangsa lawan diacak tanpa kembar (semua lawan semua).
   function startAI() {
-    let foe = menu.foe;
-    if (foe === 'random') { const others = fkeys.filter(k => k !== menu.faction); foe = others[(Math.random() * others.length) | 0]; }
+    const others = fkeys.filter(k => k !== menu.faction);
+    if (menu.foes > 1) {
+      for (let i = others.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0, t = others[i]; others[i] = others[j]; others[j] = t; }
+      game().start({ difficulty: menu.difficulty, players: menu.foes + 1, factions: [menu.faction].concat(others.slice(0, menu.foes)) });
+      return;
+    }
+    const foe = menu.foe === 'random' ? others[(Math.random() * others.length) | 0] : menu.foe;
     game().start({ difficulty: menu.difficulty, factions: [menu.faction, foe] });
   }
 
@@ -219,6 +225,20 @@
     const foe = $('foe');
     foe.innerHTML = '<option value="random">Acak</option>' + fkeys.map(k => `<option value="${k}">${BF.FACTIONS[k].name}</option>`).join('');
     foe.addEventListener('change', () => { menu.foe = foe.value; });
+    const foesEl = $('foes');
+    for (let n = 1; n < BF.SLOTS.length; n++) {
+      const b = document.createElement('button');
+      b.textContent = n;
+      b.className = 'choice' + (n === menu.foes ? ' on' : '');
+      b.addEventListener('click', () => {
+        menu.foes = n;
+        for (const c of foesEl.children) c.classList.toggle('on', c === b);
+        foe.disabled = n > 1;                               // lebih dari satu lawan: wangsa lawan selalu acak
+        if (n > 1) foe.value = 'random';
+        else foe.value = menu.foe;
+      });
+      foesEl.appendChild(b);
+    }
 
     const diffEl = $('difficulty');
     for (const k of Object.keys(BF.DIFF)) {

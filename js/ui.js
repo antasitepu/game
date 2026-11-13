@@ -366,6 +366,7 @@
       else if (e.type === 'tech' && e.owner === me) hud.toast('Riset selesai: ' + BF.TECHS[e.tech].name);
       else if (e.type === 'repairStop' && e.owner === me) hud.toast('Perbaikan berhenti: ' + ERR.res.toLowerCase());
       else if (e.type === 'garrisonFull' && e.owner === me) hud.toast('Bangunan penuh');
+      else if (e.type === 'defeat') hud.toast(`${s.players[e.pid].name} (${BF.SLOTS[e.pid].label}) ${e.resigned ? 'menyerah' : 'tumbang'}.`);
       else if (e.type === 'over') hud.showEnd(s, e.resigned);
     }
     s.events.length = 0;
@@ -375,36 +376,41 @@
 
   const fmtN = n => Math.round(n).toLocaleString('id-ID');
 
-  // Tabel statistik kedua pemain (kolom pertama selalu pemain di layar ini) dan grafik skor di bawahnya.
+  // Tabel statistik para pemain (kolom pertama selalu pemain di layar ini) dan grafik skor di bawahnya. Dua pemain:
+  // "Kamu" dan "Lawan"; lebih dari dua: lawan disebut menurut warna timnya, dengan baris hasil (menang/tumbang).
   function endStats(s) {
-    const me = s.human, ps = [s.players[me], s.players[1 - me]], sc = ps.map(BF.score), box = $('end-stats');
+    const me = s.human, ps = [s.players[me]].concat(s.players.filter(p => p.id !== me)), sc = ps.map(BF.score), box = $('end-stats');
+    const who = ps.map((p, i) => (i === 0 ? 'Kamu' : ps.length === 2 ? 'Lawan' : BF.SLOTS[p.id].label));
+    box.classList.toggle('many', ps.length > 2);
+    box.closest('.card').classList.toggle('many', ps.length > 2);
     const head = (p, who) => `<th><i style="background:${p.color}"></i>${who}<small>${p.name}</small></th>`;
     const row = (label, f, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td>${label}</td>${ps.map((p, i) => `<td>${f(p, sc[i])}</td>`).join('')}</tr>`;
     box.innerHTML = `<div><div class="end-time">Waktu permainan <b>${BF.fmtTime(s.tick / BF.TICK_RATE)}</b></div>` +
-      '<table class="end-table"><tr><th></th>' + head(ps[0], 'Kamu') + head(ps[1], 'Lawan') + '</tr>' +
+      '<table class="end-table"><tr><th></th>' + ps.map((p, i) => head(p, who[i])).join('') + '</tr>' +
+      (ps.length > 2 ? row('Hasil', p => (s.winner === p.id ? 'Menang' : p.out ? 'Tumbang' : 'Bertahan')) : '') +
       row('Skor', (p, c) => fmtN(c.total), 'total') + row('Ekonomi', (p, c) => fmtN(c.eco), 'sub') + row('Militer', (p, c) => fmtN(c.mil), 'sub') + row('Teknologi', (p, c) => fmtN(c.tek), 'sub') +
       row('Sumber daya terkumpul', p => fmtN(p.gathered)) + row('Unit dilatih', p => p.stat.trained) + row('Bangunan didirikan', p => p.stat.built) +
       row('Musuh dikalahkan', p => p.stat.killU) + row('Bangunan dirobohkan', p => p.stat.razed) +
       row('Unit gugur', p => p.stat.lostU) + row('Bangunan hilang', p => p.stat.lostB) +
       row('Teknologi diteliti', p => p.techs.length) + row('Era tercapai', p => BF.ERAS[p.era].name) + '</table></div>';
     const S = BF.SCORE, side = document.createElement('div'), note = document.createElement('div');
-    side.appendChild(scoreChart(s, ps, sc));
+    side.appendChild(scoreChart(s, ps, sc, who));
     note.className = 'end-note';
     note.textContent = `Skor = sumber daya terkumpul ÷ ${S.eco} (ekonomi) + nilai unit dan bangunan musuh yang dikalahkan ÷ ${S.mil} (militer) + era × ${S.era} + teknologi × ${S.tech} (teknologi).`;
     side.appendChild(note);
     box.appendChild(side);
   }
 
-  // Grafik garis skor sepanjang permainan (SVG): satu sumbu, dua seri berwarna tim, legenda + nilai di ujung garis,
+  // Grafik garis skor sepanjang permainan (SVG): satu sumbu, satu seri berwarna tim per pemain, legenda + nilai di ujung garis,
   // garis bantu tipis, dan garis silang + tooltip saat kursor di atas grafik. Teks memakai warna teks, bukan warna seri.
-  function scoreChart(s, ps, sc) {
-    const NS = 'http://www.w3.org/2000/svg', SURF = '#1c150e', who = ['Kamu', 'Lawan'], me = s.human, every = BF.SCORE.every;
+  function scoreChart(s, ps, sc, who) {
+    const NS = 'http://www.w3.org/2000/svg', SURF = '#1c150e', every = BF.SCORE.every;
     const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
     const div = (cls, parent, text) => { const d = document.createElement('div'); d.className = cls; if (text) d.textContent = text; if (parent) parent.appendChild(d); return d; };
     const key = (parent, color, label) => { const sp = document.createElement('span'), i = document.createElement('i'); i.style.background = color; sp.appendChild(i); sp.appendChild(document.createTextNode(label)); parent.appendChild(sp); };
     // titik data: awal permainan, tiap sampel riwayat, dan keadaan akhir
-    const pts = [{ t: 0, v: [0, 0] }].concat(s.hist.map((r, i) => ({ t: (i + 1) * every, v: [r[me], r[1 - me]] })).filter(q => q.t < s.tick), [{ t: Math.max(1, s.tick), v: [sc[0].total, sc[1].total] }]);
-    const W = 460, H = 250, L = 46, R = 50, T = 10, B = 24, tMax = pts[pts.length - 1].t, vMax = Math.max(100, ...pts.map(q => Math.max(q.v[0], q.v[1])));
+    const pts = [{ t: 0, v: ps.map(() => 0) }].concat(s.hist.map((r, i) => ({ t: (i + 1) * every, v: ps.map(p => r[p.id] || 0) })).filter(q => q.t < s.tick), [{ t: Math.max(1, s.tick), v: sc.map(c => c.total) }]);
+    const W = 460, H = 250, L = 46, R = 50, T = 10, B = 24, tMax = pts[pts.length - 1].t, vMax = Math.max(100, ...pts.map(q => Math.max(...q.v)));
     const raw = vMax / 4, pow = Math.pow(10, Math.floor(Math.log10(raw))), fr = raw / pow, step = (fr <= 1 ? 1 : fr <= 2 ? 2 : fr <= 5 ? 5 : 10) * pow, yMax = Math.ceil(vMax / step) * step;
     const X = t => L + (W - L - R) * t / tMax, Y = v => T + (H - T - B) * (1 - v / yMax);
 
@@ -412,23 +418,29 @@
     div('ec-title', headEl, 'Skor sepanjang permainan');
     const legend = div('ec-legend', headEl);
     ps.forEach((p, i) => key(legend, p.color, who[i]));
-    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `Grafik skor: ${who[0]} ${fmtN(sc[0].total)}, ${who[1]} ${fmtN(sc[1].total)}` }, wrap);
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': 'Grafik skor: ' + ps.map((p, i) => `${who[i]} ${fmtN(sc[i].total)}`).join(', ') }, wrap);
     for (let v = 0; v <= yMax + 1e-6; v += step) {
       el('line', { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: '#3a2e1e', 'stroke-width': 1 }, svg);
       el('text', { x: L - 7, y: Y(v) + 4, 'text-anchor': 'end' }, svg).textContent = fmtN(v);
     }
     const mins = tMax / 1200, ms = mins <= 6 ? 1 : mins <= 14 ? 2 : mins <= 35 ? 5 : 10;
     for (let m = 0; m * 1200 <= tMax; m += ms) el('text', { x: X(m * 1200), y: H - 6, 'text-anchor': 'middle' }, svg).textContent = m ? m + ' mnt' : '0';
-    for (const i of [1, 0]) {                             // lawan dulu, lalu pemain di layar ini (di atas)
+    for (let i = ps.length - 1; i >= 0; i--) {            // lawan dulu, lalu pemain di layar ini (di atas)
       el('path', { d: pts.map((q, k) => (k ? 'L' : 'M') + X(q.t).toFixed(1) + ' ' + Y(q.v[i]).toFixed(1)).join(' '), fill: 'none', stroke: ps[i].color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
       el('circle', { cx: X(tMax), cy: Y(sc[i].total), r: 4, fill: ps[i].color, stroke: SURF, 'stroke-width': 2 }, svg);
     }
-    // nilai akhir di ujung garis; bila kedua label bertabrakan, renggangkan secukupnya
-    const ly = [Y(sc[0].total) + 4, Y(sc[1].total) + 4];
-    if (Math.abs(ly[0] - ly[1]) < 13) { const mid = (ly[0] + ly[1]) / 2, up = sc[0].total >= sc[1].total ? 0 : 1; ly[up] = mid - 6.5; ly[1 - up] = mid + 6.5; }
+    // nilai akhir di ujung garis; label yang bertabrakan direnggangkan 13px, berpusat di rata-rata kelompoknya
+    const ly = sc.map(c => Y(c.total) + 4), ord = ly.map((v, i) => i).sort((a, b) => ly[a] - ly[b] || a - b);
+    for (let a = 0, b; a < ord.length; a = b) {
+      for (b = a + 1; b < ord.length && ly[ord[b]] - ly[ord[b - 1]] < 13;) b++;
+      if (b - a < 2) continue;
+      let mid = 0;
+      for (let k = a; k < b; k++) mid += ly[ord[k]] / (b - a);
+      for (let k = a; k < b; k++) ly[ord[k]] = mid + (k - a - (b - a - 1) / 2) * 13;
+    }
     ps.forEach((p, i) => { el('text', { x: X(tMax) + 9, y: Math.min(H - B + 4, Math.max(T + 8, ly[i])), class: 'val' }, svg).textContent = fmtN(sc[i].total); });
 
-    // lapisan kursor: garis silang menempel ke sampel terdekat + tooltip berisi kedua seri (nilai dulu, lalu nama)
+    // lapisan kursor: garis silang menempel ke sampel terdekat + tooltip berisi semua seri (nilai dulu, lalu nama)
     const cross = el('line', { y1: T, y2: H - B, stroke: '#8a7a5c', 'stroke-width': 1, visibility: 'hidden' }, svg);
     const dots = ps.map(p => el('circle', { r: 4, fill: p.color, stroke: SURF, 'stroke-width': 2, visibility: 'hidden' }, svg));
     const tip = div('ec-tip hidden', wrap), hit = el('rect', { x: L, y: T, width: W - L - R, height: H - T - B, fill: 'transparent' }, svg);
@@ -453,7 +465,8 @@
 
   // note: keterangan khusus (lawan keluar, koneksi putus). resigned: id pemain yang menyerah.
   hud.showEnd = function (s, resigned) {
-    const win = s.winner === s.human, none = s.winner < 0;
+    // lost: pemain di layar ini tumbang sementara yang lain masih bertahan (permainan tunggal lebih dari dua pemain)
+    const win = s.winner === s.human, lost = !win && s.players[s.human].out && s.players.some(p => !p.out), none = s.winner < 0 && !lost;
     $('end-title').textContent = none ? 'Permainan Berakhir' : win ? 'Kemenangan!' : 'Kekalahan';
     $('end-title').className = none ? 'draw' : win ? 'win' : 'lose';
     $('end-text').textContent = hud.endNote || (resigned !== undefined ? (resigned === s.human ? 'Kamu menyerah.' : 'Lawan menyerah.')
