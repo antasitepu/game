@@ -52,9 +52,12 @@ Unit butuh animasi (diam, jalan, bekerja, menyerang, mati). Alurnya (contoh untu
 folder proyek, butuh Blender):
 
 1. **Model** — dua pilihan:
-   - **Gratis, lewat skrip Blender** (yang dipakai sekarang): model pekerja dibangun dan diberi tekstur oleh skrip, tanpa akun:
+   - **Gratis, lewat skrip Blender** (yang dipakai sekarang): model, tekstur, kerangka, bobot, dan gerak pekerja dibuat
+     skrip (`pekerja.py` + pustaka `manusia.py`), tanpa akun:
      `blender -b --factory-startup --python tools/aset/blender/pekerja.py -- tools/aset/sumber/pekerja`
-     Hasilnya `pekerja-mixamo.fbx` (untuk Mixamo), `pekerja-tempel.glb` (caping), dan pratinjau PNG. Lanjut ke langkah 3.
+     Hasilnya `tools/aset/sumber/pekerja.glb` (berkerangka, klip diam/jalan/jalan_bawa/kerja/lempar/mati) dan pratinjau
+     PNG termasuk lembar kontak tiap klip. Langsung ke langkah 5. Skrip juga menulis `pekerja-mixamo.fbx` dan
+     `pekerja-tempel.glb` (caping) bila suatu saat ingin memakai gerak Mixamo sebagai gantinya (langkah 3–4).
    - **Generator AI** (berbayar di Meshy/Tripo): buat dengan prompt di bawah (pose A, tangan kosong: senjata/alat dibuat
      terpisah dan ditempel ke tulang tangan di game). Unduh GLB bertekstur ke `tools/aset/buatan/pekerja-ai.glb`.
 2. **Rapikan** (hanya untuk model AI) — gabung mesh, sederhanakan, tegakkan, ekspor FBX untuk Mixamo + pratinjau depan/samping:

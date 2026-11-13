@@ -77,6 +77,19 @@ if not arm:
     raise SystemExit('tidak ada FBX berisi mesh ("With Skin") di ' + FOLDER)
 model = [o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm]
 inti = lambda n: n.split(':')[-1]
+
+# Mixamo menanam tiap file tekstur sekali saja: bahan lain yang memakai file yang sama kehilangan gambarnya (tampil
+# merah muda). Gambar yang gagal dimuat diganti gambar termuat yang bernama file sama.
+nama_file = lambda g: os.path.basename(g.filepath.replace('\\', '/')).lower()
+termuat = {nama_file(g): g for g in bpy.data.images if g.size[0] > 0}
+for m in bpy.data.materials:
+    for n in (m.node_tree.nodes if m.node_tree else []):
+        if n.type == 'TEX_IMAGE' and n.image and n.image.size[0] == 0:
+            if nama_file(n.image) in termuat:
+                n.image = termuat[nama_file(n.image)]
+                catatan.append('bahan "' + m.name + '": tautan tekstur diperbaiki (' + nama_file(n.image) + ')')
+            else:
+                catatan.append('bahan "' + m.name + '": tekstur ' + nama_file(n.image) + ' tidak ditemukan')
 BONE = re.compile(r'pose\.bones\["([^"]+)"\]')
 
 # Tempelan kaku: verteksnya dipindah ke ruang mesh model (pose ikat), diikat penuh ke satu tulang, lalu digabung ke mesh model.

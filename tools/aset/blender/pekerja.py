@@ -1,13 +1,16 @@
 # Model pekerja buatan skrip, tanpa akun atau add-on: tubuh sederhana berpose A, tunik putih gading (diwarnai tim oleh game),
 # sabuk kain, celana longgar, dan caping. Bahan memakai tekstur kain/jerami Poly Haven (CC0); warna dan bayangan lembut (AO)
 # dipanggang ke satu atlas. Menghadap −Y Blender (depan Mixamo), kaki di z = 0, satuan meter.
+# Kerangka, bobot, dan klip gerak (diam, jalan, jalan_bawa, kerja, lempar, mati) dibuat manusia.py; hasilnya satu GLB
+# berkerangka untuk `node tools/aset/olah.mjs pekerja`: <folder-keluaran>.glb (bawaan tools/aset/sumber/pekerja.glb) atau --glb.
 # Keluaran di <folder-keluaran>:
+#   pekerja-gerak-<klip>.png  lembar kontak tiap klip (6 frame berjajar)
 #   pekerja-mixamo.fbx   tubuh + pakaian tanpa caping, untuk diunggah ke Mixamo (pilih kerangka "No Fingers")
 #   pekerja-tempel.glb   caping; ditempel kaku ke tulang kepala oleh gabung.py (--tempel pekerja-tempel.glb:Head)
 #   pekerja-lengkap.glb  semuanya (tanpa kerangka), untuk diperiksa
 #   pekerja-atlas.png, pekerja-{depan,samping,belakang,serong,atas}.png, pekerja-tim-{biru,merah}.png (tunik dikali warna tim)
 #
-#   blender --background --factory-startup --python tools/aset/blender/pekerja.py -- <folder-keluaran> [--tekstur <folder>]
+#   blender --background --factory-startup --python tools/aset/blender/pekerja.py -- <folder-keluaran> [--tekstur <folder>] [--glb <file>]
 # --tekstur: folder tembolok tekstur Poly Haven (bawaan tools/aset/sumber, sama dengan olah.mjs); diunduh bila belum ada.
 # Baris terakhir keluaran: PEKERJA {json ringkasan}.
 import bpy, bmesh, json, math, os, sys, urllib.request
@@ -16,6 +19,10 @@ from mathutils import Matrix, Vector
 
 ARG = sys.argv[sys.argv.index('--') + 1:]
 KELUAR = os.path.abspath(ARG[0])
+GLB = os.path.abspath(ARG[ARG.index('--glb') + 1]) if '--glb' in ARG else KELUAR + '.glb'
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import manusia as mn
 TEKS = os.path.abspath(ARG[ARG.index('--tekstur') + 1]) if '--tekstur' in ARG else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'sumber')
 os.makedirs(KELUAR, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -265,6 +272,9 @@ bagian.append(caping)
 
 # ---------------------------------------------------------------- gabung, kaki ke z = 0, UV atlas
 hitung = {o.name: sum(len(p.vertices) - 2 for p in o.data.polygons) for o in bagian}
+NAMA_BAGIAN = [o.name for o in bagian]
+for i, o in enumerate(bagian):                                  # tiap verteks mengingat bagian asalnya (dipakai saat memberi bobot)
+    o.data.attributes.new('bagian', 'INT', 'POINT').data.foreach_set('value', [i] * len(o.data.vertices))
 for o in bagian:
     if 'asal' not in o.data.uv_layers:
         o.data.uv_layers.new(name='asal')
@@ -368,7 +378,8 @@ bpy.ops.export_scene.gltf(filepath=berkas('pekerja-lengkap.glb'), export_format=
 
 sc.render.engine = 'BLENDER_EEVEE'
 sc.view_settings.view_transform = 'Standard'
-sc.world.use_nodes = True
+if bpy.app.version < (5, 0, 0):                                # sejak Blender 5 dunia selalu bernode
+    sc.world.use_nodes = True
 latar = next(n for n in sc.world.node_tree.nodes if n.type == 'BACKGROUND')
 latar.inputs['Color'].default_value, latar.inputs['Strength'].default_value = (0.82, 0.84, 0.86, 1), 0.9
 surya = bpy.data.objects.new('Surya', bpy.data.lights.new('Surya', 'SUN'))
@@ -391,6 +402,49 @@ for nama, arah, orto in (('depan', (0, -1, 0), 1), ('samping', (1, 0, 0), 1), ('
     sc.render.filepath = berkas('pekerja-' + nama + '.png')
     bpy.ops.render.render(write_still=True)
 
+# ---------------------------------------------------------------- kerangka + gerak → GLB berkerangka
+pilih(ob, topi)
+bpy.ops.object.join()                                           # caping menyatu lagi dan ikut tulang kepala
+me = ob.data
+asal = [NAMA_BAGIAN[d.value] for d in me.attributes['bagian'].data]
+di = lambda *nama: [i for i, n in enumerate(asal) if n in nama]
+kaku = di('muka', 'rambut', 'caping') + [i for i in di('kepala') if me.vertices[i].co.z > 1.475 - dasar]      # kepala di atas dagu kaku
+arm = mn.buat_kerangka(mn.sendi({k: LENGAN[k][:2] for k in (1, -1)}, turun=dasar, kaki_x=KAKI_X))
+# bawah tunik meniru bobot celana di baliknya (celana tidak menembus keluar saat melangkah); sabuk meniru tunik
+catatan = mn.ikat(ob, arm, {'Head': kaku}, tiru=[(di('tunik'), di('celana'), (0.90, 1.00)), (di('sabuk'), di('tunik'), None)])
+P = mn.Peraga(arm)
+KLIP = (('diam', 90, mn.diam), ('jalan', 30, mn.jalan), ('jalan_bawa', 30, lambda P, p: mn.jalan(P, p, bawa=True)), ('kerja', 27, mn.kerja),
+        ('lempar', 24, mn.lempar), ('mati', 36, mn.mati))
+for nama, frame, fungsi in KLIP:
+    P.rekam(nama, frame, fungsi)
+aksi = P.selesai()
+
+
+bukan_caping = set(di(*[n for n in NAMA_BAGIAN if n != 'caping']))
+
+
+def lantai(a):                                                  # titik terendah tubuh (tanpa caping) sepanjang klip: [paling rendah, paling tinggi] (m)
+    P.pasang(a)
+    z = []
+    for f in range(0, int(a.frame_range[1]) + 1, 3):
+        sc.frame_set(f)
+        ev = ob.evaluated_get(bpy.context.evaluated_depsgraph_get())
+        m = ev.to_mesh()
+        z.append(min(v.co.z for v in m.vertices if v.index in bukan_caping))
+        ev.to_mesh_clear()
+    P.diam()
+    return [round(min(z), 3), round(max(z), 3)]
+
+
+dasar_klip = {n: lantai(aksi[n]) for n, _, _ in KLIP}
+sc.frame_set(0)
+pilih(ob, arm)
+bpy.ops.export_scene.gltf(filepath=GLB, export_format='GLB', use_selection=True, export_animation_mode='ACTIONS', export_skins=True, export_yup=True)
+posisi_kam = (kam.location.copy(), kam.rotation_euler.copy(), kam.data.type)
+for nama, _, _ in KLIP:
+    mn.lembar(P, aksi[nama], berkas('pekerja-gerak-' + nama + '.png'), **({'pusat': (0, 0.4, 0.5), 'jarak': 5.2} if nama == 'mati' else {}))
+kam.location, kam.rotation_euler, kam.data.type = posisi_kam
+
 # warna tim: tunik (bahan kain_tim) dikalikan warna tim, seperti yang nanti dilakukan game
 nt = akhir[1].node_tree
 kali, b = nt.nodes.new('ShaderNodeMix'), next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
@@ -403,4 +457,5 @@ for nama, hexa in (('biru', '3b82f6'), ('merah', 'ef4444')):
     sc.render.filepath = berkas('pekerja-tim-' + nama + '.png')
     bpy.ops.render.render(write_still=True)
 
-print('PEKERJA ' + json.dumps({'tinggi_m': round(tinggi, 3), 'segitiga': hitung, 'total': sum(hitung.values()), 'folder': KELUAR}))
+print('PEKERJA ' + json.dumps({'tinggi_m': round(tinggi, 3), 'segitiga': hitung, 'total': sum(hitung.values()), 'folder': KELUAR, 'glb': GLB,
+                               'tulang': len(arm.data.bones), 'klip': {n: round(f / 30, 2) for n, f, _ in KLIP}, 'titik_terendah_m': dasar_klip, 'catatan': catatan}))
