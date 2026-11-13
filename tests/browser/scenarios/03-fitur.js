@@ -24,7 +24,7 @@ module.exports = async ({ page, check }) => {
   check('semua efek suara & musik tersintesis tanpa error', await p.ev(`BF.audio.beat > 0`));
 
   // ---- riset teknologi lewat UI
-  await p.ev(`(() => { const s = BF.game.s, th = s.buildings[0], q = s.players[0]; q.res = { food: 3000, wood: 3000, gold: 3000, stone: 3000 }; let spot = null; for (let r = 4; r < 12 && !spot; r++) for (let d = -r; d <= r && !spot; d++) for (const [tx, ty] of [[th.tx + d, th.ty + r], [th.tx + d, th.ty - r]]) if (!spot && BF.canPlace(s.map, 'storage', tx, ty) && !s.map.node[BF.idx(tx + 2, ty + 2)] && !s.map.node[BF.idx(tx + 1, ty + 2)] && !s.map.node[BF.idx(tx + 2, ty + 1)]) spot = { tx, ty }; const b = BF.spawnBuilding(s, 'storage', 0, spot.tx, spot.ty, true); BF.updateFog(s); window.__st = b.id; })()`);
+  await p.ev(`(() => { const s = BF.game.s, th = s.buildings[0], q = s.players[0]; q.res = { food: 3000, wood: 3000, gold: 3000, stone: 3000 }; let spot = null; for (let r = 4; r < 12 && !spot; r++) for (let d = -r; d <= r && !spot; d++) for (const [tx, ty] of [[th.tx + d, th.ty + r], [th.tx + r, th.ty + d]]) if (!spot && BF.canPlace(s.map, 'storage', tx, ty) && !s.map.node[BF.idx(tx + 2, ty + 2)] && !s.map.node[BF.idx(tx + 1, ty + 2)] && !s.map.node[BF.idx(tx + 2, ty + 1)]) spot = { tx, ty }; const b = BF.spawnBuilding(s, 'storage', 0, spot.tx, spot.ty, true); for (const a of s.animals) if (BF.dist(a.x - spot.tx - 1, a.y - spot.ty - 1) < 6) { a.dead = true; s.byId.delete(a.id); s.hasDead = true; } BF.updateFog(s); window.__st = b.id; })()`);
   const st = await p.ev(H.buildingPoint(`BF.game.s.byId.get(window.__st)`));
   await p.sleep(200);
   await p.click(st.x, st.y);

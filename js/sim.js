@@ -431,7 +431,7 @@
       if (gap < reach + 1.2) {
         const dx = t.x - u.x, dy = t.y - u.y, l = dist(dx, dy) || 1;
         const nx = u.x + dx / l * d.speed * DT, ny = u.y + dy / l * d.speed * DT;
-        if (BF.passable(s.map, nx | 0, ny | 0, u.owner)) {
+        if (BF.passable(s.map, Math.floor(nx), Math.floor(ny), u.owner)) {      // floor, bukan |0: −0,5 harus di luar peta
           u.x = nx; u.y = ny; u.dir = Math.atan2(dy, dx);
           u.moving = true; u.path = null; o.planned = false;
           return;
@@ -521,7 +521,7 @@
       } else if (o.animal) {
         const a = s.byId.get(o.animal);
         if (!a || a.dead || a.state !== 'carcass') { if (!retargetAnimal(s, u, o)) finishGather(u, o); return; }
-        if (dist(a.x - u.x, a.y - u.y) > 1.2) { o.state = 'go'; o.planned = false; return; }
+        if (dist(a.x - u.x, a.y - u.y) > 1.5) { o.state = 'go'; o.planned = false; return; }
         u.working = true;
         u.dir = Math.atan2(a.y - u.y, a.x - u.x);
         o.t += DT * p.mod.gather.hunt;
@@ -565,7 +565,7 @@
   // ---------------------------------------------------------------- hewan liar & berburu
 
   // Hewan tidak dimiliki siapa pun; owner −9 membuat tembok maupun gerbang siapa pun menghalanginya.
-  const walkable = (s, x, y) => BF.passable(s.map, x | 0, y | 0, -9);
+  const walkable = (s, x, y) => BF.passable(s.map, Math.floor(x), Math.floor(y), -9);
 
   function addAnimal(s, type, x, y) {
     const d = BF.ANIMALS[type];
@@ -685,25 +685,26 @@
     o.ax = a.x; o.ay = a.y;
     const dd = dist(a.x - u.x, a.y - u.y);
     if (a.state === 'carcass') {
-      if (dd <= 0.8) { u.path = null; startWork(u, o); return; }
+      if (dd <= 1) { u.path = null; startWork(u, o); return; }
     } else if (dd <= BF.HUNT.range) {
       u.path = null; o.planned = false;
       u.dir = Math.atan2(a.y - u.y, a.x - u.x);
       if (u.cd <= 0) { u.cd = BF.HUNT.cooldown; u.atkAnim = 0.3; spawnProjectile(s, u.x, u.y, a, BF.HUNT, { k: 'h', o: u.owner }, u.id); }
       return;
     }
-    if (dd < 3) {                                       // dekat: langkah lurus, tanpa mencari jalur
+    if (dd < 3 && !o.planned) {                         // dekat & tanpa jalur aktif: langkah lurus bila terbuka; terhalang → cari jalur
       const nx = u.x + (a.x - u.x) / dd * d.speed * DT, ny = u.y + (a.y - u.y) / dd * d.speed * DT;
-      if (BF.passable(s.map, nx | 0, ny | 0, u.owner)) {
+      if (BF.passable(s.map, Math.floor(nx), Math.floor(ny), u.owner)) {
         u.x = nx; u.y = ny; u.dir = Math.atan2(a.y - u.y, a.x - u.x);
-        u.moving = true; u.path = null; o.planned = false;
+        u.moving = true; u.path = null;
         return;
       }
     }
-    const gx = a.x | 0, gy = a.y | 0;
+    // jalur: ke tile bangkai itu sendiri (hewan hanya berdiri di tile yang bisa dipijak), atau ke sekitar hewan hidup
+    const gx = a.x | 0, gy = a.y | 0, range = a.state === 'carcass' ? 0 : 1;
     if (o.planned && (o.gx !== gx || o.gy !== gy) && u.repathT <= 0) o.planned = false;
     if (!o.planned) { o.gx = gx; o.gy = gy; }
-    if (travel(s, u, o, { x0: o.gx, y0: o.gy, x1: o.gx, y1: o.gy, range: 1 }, d.speed) === 2) o.planned = false;
+    if (travel(s, u, o, { x0: o.gx, y0: o.gy, x1: o.gx, y1: o.gy, range }, d.speed) === 2) o.planned = false;
   }
 
   // ---------------------------------------------------------------- build
@@ -817,11 +818,11 @@
         const push = (rr - dd) * 0.35, wa = pa ? (pb ? 0.5 : 1) : 0, wb = pb ? (pa ? 0.5 : 1) : 0;
         if (wa) {
           const x = a.x - nx * push * wa, y = a.y - ny * push * wa;
-          if (BF.passable(map, x | 0, y | 0, a.owner)) { a.x = x; a.y = y; }
+          if (BF.passable(map, Math.floor(x), Math.floor(y), a.owner)) { a.x = x; a.y = y; }
         }
         if (wb) {
           const x = b.x + nx * push * wb, y = b.y + ny * push * wb;
-          if (BF.passable(map, x | 0, y | 0, b.owner)) { b.x = x; b.y = y; }
+          if (BF.passable(map, Math.floor(x), Math.floor(y), b.owner)) { b.x = x; b.y = y; }
         }
       }
     }

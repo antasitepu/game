@@ -57,7 +57,10 @@
     M = tex.build();
     // pantulan langit HDRI hanya untuk permukaan mengilap (air, emas, baja pada unit); di permukaan kasar nyaris tak terlihat tetapi mahal
     M.water.envMap = M.unit.envMap = BF.assets.bahan.emas.envMap = BF.assets.langit;
-    gfx.spriteTex = { fire: glowTex('255,150,40', '255,235,140'), smoke: glowTex('70,66,62', '120,116,110'), dust: glowTex('190,170,140', '210,195,170'), spark: glowTex('255,240,200', '255,255,255') };
+    gfx.spriteTex = { fire: fxTex('fire'), smoke: fxTex('smoke'), dust: fxTex('dust'), spark: fxTex('spark'), ember: fxTex('ember') };
+    M.chip = [new THREE.MeshStandardMaterial({ color: 0x8d867a, roughness: 0.95, flatShading: true }), new THREE.MeshStandardMaterial({ color: 0x5e4733, roughness: 0.9 })];   // serpihan batu, kayu
+    M.rock = new THREE.MeshStandardMaterial({ color: 0x8b8579, roughness: 0.92, flatShading: true });
+    gfx.chipGeo = [new THREE.DodecahedronGeometry(0.05, 0), new THREE.BoxGeometry(0.16, 0.025, 0.035)];
     M.skirt = new THREE.MeshStandardMaterial({ map: skirtTex(), transparent: true, depthWrite: false, color: 0x8a6d47, roughness: 1, metalness: 0 });
     // penanda antarmuka: warna apa adanya (tanpa tone mapping)
     M.ring = [0xffffff, 0xfca5a5, 0xfde68a].map(c => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.95, depthWrite: false, toneMapped: false }));   // milik sendiri, lawan, hewan liar
@@ -75,6 +78,52 @@
     renderer.setSize(w, h, false);
     view.resize(w, h);
   };
+
+  // Tekstur efek prosedural (128 px): kepulan asap/debu bergumpal dari derau fbm dengan sisi atas lebih terang, lidah api
+  // meruncing ke atas dengan inti putih-kuning ke tepi merah, bara, dan kilat benturan.
+  function fxTex(kind) {
+    const S = 128, c = document.createElement('canvas');
+    c.width = c.height = S;
+    const g = c.getContext('2d'), img = g.createImageData(S, S), d = img.data, seed = { smoke: 3, dust: 9, fire: 17, spark: 23, ember: 29 }[kind];
+    const vn = (x, y) => {
+      const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+      const h = (a, b) => hash(a + seed * 97, b - seed * 31) / 4294967296;
+      return (h(xi, yi) * (1 - sx) + h(xi + 1, yi) * sx) * (1 - sy) + (h(xi, yi + 1) * (1 - sx) + h(xi + 1, yi + 1) * sx) * sy;
+    };
+    const fbm = (x, y) => (vn(x, y) * 0.5 + vn(x * 2, y * 2) * 0.25 + vn(x * 4, y * 4) * 0.125 + vn(x * 8, y * 8) * 0.0625) / 0.9375;
+    const sm = (a, b, v) => { const q = Math.min(1, Math.max(0, (v - a) / (b - a))); return q * q * (3 - 2 * q); };
+    const ramp = [[0, [120, 20, 5]], [0.35, [230, 80, 15]], [0.6, [255, 150, 35]], [0.82, [255, 215, 110]], [1, [255, 248, 225]]];
+    for (let py = 0; py < S; py++)
+      for (let px = 0; px < S; px++) {
+        const u = (px + 0.5) / S * 2 - 1, v = (py + 0.5) / S * 2 - 1, r = Math.hypot(u, v), j = (py * S + px) * 4;
+        let R = 255, G = 255, Bc = 255, A = 0;
+        if (kind === 'smoke' || kind === 'dust') {
+          const n = fbm(u * 2.4 + 5, v * 2.4 + 5);
+          A = sm(0.08, 0.62, (1 - r * 1.12) * 1.5 + (n - 0.5) * 1.5);
+          const light = 0.78 + (-u * 0.25 - v * 0.45) * 0.5 + (n - 0.5) * 0.45, base = kind === 'smoke' ? [118, 113, 107] : [200, 182, 150];
+          [R, G, Bc] = base.map(q => Math.min(255, q * light));
+        } else if (kind === 'fire') {
+          const t = (1 - v) / 2, n = fbm(u * 2.6 + 2, v * 2 + 7), uu = u + (n - 0.5) * 0.8 * t, w = 0.86 * Math.pow(1 - t, 0.9) * Math.min(1, 0.5 + t * 3);
+          let inten = Math.max(0, 1 - Math.abs(uu) / Math.max(0.01, w)) * sm(0, 0.12, 1 - t);
+          inten = Math.min(1, Math.max(0, inten * 1.35 + (n - 0.5) * 0.7 - t * 0.35));
+          let k = 0;
+          while (k < ramp.length - 2 && inten > ramp[k + 1][0]) k++;
+          const a = ramp[k], b = ramp[k + 1], q = (inten - a[0]) / (b[0] - a[0]);
+          [R, G, Bc] = a[1].map((x, i) => x + (b[1][i] - x) * q);
+          A = sm(0.04, 0.45, inten);
+        } else if (kind === 'ember') {
+          A = Math.exp(-r * r * 22); R = 255; G = 170 + 80 * A; Bc = 60 + 120 * A;
+        } else {                                        // spark: kilat bintang
+          A = Math.min(1, Math.exp(-r * r * 30) + (Math.exp(-Math.abs(u) * 28) * Math.exp(-Math.abs(v) * 3.5) + Math.exp(-Math.abs(v) * 28) * Math.exp(-Math.abs(u) * 3.5)) * 0.7);
+          G = 238; Bc = 190;
+        }
+        d[j] = R; d[j + 1] = G; d[j + 2] = Bc; d[j + 3] = A * 255;
+      }
+    g.putImageData(img, 0, 0);
+    const tx = new THREE.CanvasTexture(c);
+    tx.encoding = THREE.sRGBEncoding;
+    return tx;
+  }
 
   function glowTex(inner, outer) {
     const c = document.createElement('canvas');
@@ -127,7 +176,7 @@
   function buildWorld(s) {
     disposeWorld();
     const map = s.map, root = new THREE.Group();
-    W = { s, map, root, tick: -1, fogVer: -1, mapVer: -1, linkVer: -1, lod: -1, bld: new Map(), units: new Map(), animals: new Map(), fxMap: new Map(), pools: {}, nodes: [], inst: [], flat: new Map(), t0: performance.now() };
+    W = { s, map, root, tick: -1, fogVer: -1, mapVer: -1, linkVer: -1, lod: -1, bld: new Map(), units: new Map(), animals: new Map(), fxMap: new Map(), fly: new Map(), stuck: [], pools: {}, nodes: [], inst: [], flat: new Map(), t0: performance.now() };
     scene.add(root);
 
     // medan: bidang berpetak — bukit dari BF.relief (verteksnya tepat di titik kisi relief) dan cekungan di bawah air
@@ -318,7 +367,7 @@
   function resetPools() {
     for (const k in W.pools) { const p = W.pools[k]; for (let i = p.n; i < p.items.length; i++) p.items[i].visible = false; p.n = 0; }
   }
-  const sprite = kind => () => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: gfx.spriteTex[kind], transparent: true, depthWrite: false, blending: kind === 'fire' || kind === 'spark' ? THREE.AdditiveBlending : THREE.NormalBlending })); sp.userData.ownMat = false; return sp; };
+  const sprite = kind => () => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: gfx.spriteTex[kind], transparent: true, depthWrite: false, blending: kind === 'fire' || kind === 'spark' || kind === 'ember' ? THREE.AdditiveBlending : THREE.NormalBlending })); sp.userData.ownMat = false; return sp; };
 
   // ---------------------------------------------------------------- bangunan
 
@@ -420,32 +469,54 @@
       if (o.flag) { o.flag.visible = b.built && !dim; o.flag.rotation.y = Math.sin(t * 2.2 + b.id) * 0.35 - 0.6; }
       if (!b.built || dim) continue;
       const cx = b.tx + b.size / 2, cz = b.ty + b.size / 2, hgt = view.BUILD_H[b.type], by = o.base;
-      if (o.meta.smoke) puffs(b.tx + o.meta.smoke[0], by + o.meta.smoke[1], b.ty + o.meta.smoke[2], t, b.id, 'smoke', 0.3, 0.5);
+      if (o.meta.smoke) puffs(b.tx + o.meta.smoke[0], by + o.meta.smoke[1], b.ty + o.meta.smoke[2], t, b.id, 'smoke', 0.28, 0.45, 4, 1.8, 0.32, 0.95);
       const frac = b.hp / BF.bldDef(s, b).hp;
-      if (frac < 0.5 && !B[b.type].barrier) {
-        puffs(cx, by + hgt * 0.7, cz, t, b.id + 3, 'smoke', 0.55, 0.75);
-        flames(cx + 0.15, by + hgt * 0.62, cz + 0.1, t, b.id);
-        if (frac < 0.25 && b.size > 1) flames(cx - b.size * 0.25, by + hgt * 0.45, cz + b.size * 0.2, t, b.id + 7);
+      if (frac < 0.5 && !B[b.type].barrier) {                                 // terbakar: kolom asap gelap, lidah api, bara beterbangan
+        const heavy = frac < 0.25;
+        puffs(cx, by + hgt * 0.72, cz, t, b.id + 3, 'smoke', 0.62, 0.85, heavy ? 7 : 5, 2.8, 0.28, 0.42);
+        flames(cx + 0.15, by + Math.min(hgt * 0.72, 2.4), cz + 0.1, t, b.id, 0.85 + b.size * 0.12);
+        if (heavy && b.size > 1) flames(cx - b.size * 0.25, by + Math.min(hgt * 0.6, 2), cz + b.size * 0.2, t, b.id + 7, 0.8);
       }
     }
     for (const [id, o] of W.bld) if (!s.byId.has(id)) { endBuild(o); W.root.remove(o.group); W.bld.delete(id); }
     W.linkVer = s.map.version;
   }
 
-  function puffs(x, y, z, t, seed, kind, size, alpha) {
-    for (let i = 0; i < 4; i++) {
-      const k = ((t * 0.45 + seed * 0.37 + i * 0.25) % 1 + 1) % 1, sp = take(kind, sprite(kind));
-      sp.position.set(x + Math.sin(k * 5 + i + seed) * 0.12 + k * 0.35, y + k * 1.6, z + Math.cos(k * 4 + i) * 0.1);
-      sp.scale.setScalar(size * (0.5 + k * 1.4));
-      sp.material.opacity = (1 - k) * alpha;
+  // Asap/debu membumbung: tiap kepulan lahir kecil, mengembang, berputar pelan, condong searah angin, lalu memudar.
+  // n kepulan, rise = tinggi naik, rate = siklus per detik, shade = kecerahan (asap kebakaran lebih gelap).
+  const WIND = [0.5, 0.18];
+  const frand = (a, b) => (hash(a, b) % 1000) / 1000;
+  function puffs(x, y, z, t, seed, kind, size, alpha, n, rise, rate, shade) {
+    n = n || 4; rise = rise || 1.6; rate = rate || 0.45;
+    for (let i = 0; i < n; i++) {
+      const k = ((t * rate + seed * 0.37 + i / n) % 1 + 1) % 1, j = frand(seed, i), sp = take(kind, sprite(kind));
+      sp.position.set(x + (j - 0.5) * 0.16 + Math.sin(k * 5 + i + seed) * 0.08 + k * k * WIND[0] * rise, y + k * rise, z + (j - 0.5) * 0.12 + k * k * WIND[1] * rise);
+      sp.scale.setScalar(size * (0.45 + k * 1.7) * (0.85 + j * 0.3));
+      sp.material.rotation = j * 6.28 + k * (j - 0.5) * 1.6;
+      sp.material.color.setScalar(shade || 1);
+      sp.material.opacity = Math.min(1, k * 6) * (1 - k) * alpha;
     }
   }
-  function flames(x, y, z, t, seed) {
-    for (let i = 0; i < 3; i++) {
-      const fl = 0.75 + Math.sin(t * 11 + seed + i * 2.1) * 0.25, sp = take('fire', sprite('fire'));
-      sp.position.set(x + (i - 1) * 0.22, y + 0.18 * fl, z + (i % 2) * 0.12);
-      sp.scale.set(0.5 * fl, 0.8 * fl, 1);
-      sp.material.opacity = 0.9;
+  // Api: empat lidah api yang menari (tinggi dan lebar berdenyut tak seirama) dan bara yang terbawa angin ke atas.
+  function flames(x, y, z, t, seed, sc) {
+    sc = sc || 1;
+    for (let i = 0; i < 4; i++) {
+      const j = frand(seed + 11, i), fl = 0.8 + Math.sin(t * (9 + j * 5) + seed + i * 2.1) * 0.13 + Math.sin(t * 23 + i * 1.7) * 0.07, sp = take('fire', sprite('fire'));
+      const h = (0.45 + j * 0.35) * sc * fl;
+      sp.position.set(x + (i - 1.5) * 0.2 * sc, y + h * 0.4, z + (j - 0.5) * 0.3 * sc);
+      sp.scale.set(h * 0.9, h, 1);
+      sp.material.rotation = Math.sin(t * 3 + i) * 0.08;
+      sp.material.opacity = 0.95;
+    }
+    const glow = take('ember', sprite('ember'));                                  // pendar jingga di dasar api
+    glow.position.set(x, y + 0.15 * sc, z);
+    glow.scale.setScalar(1.3 * sc * (0.95 + Math.sin(t * 13 + seed) * 0.05));
+    glow.material.opacity = 0.32;
+    for (let i = 0; i < 4; i++) {
+      const k = ((t * 0.6 + seed * 0.21 + i / 4) % 1 + 1) % 1, j = frand(seed + 5, i), sp = take('ember', sprite('ember'));
+      sp.position.set(x + (j - 0.5) * 0.45 * sc + Math.sin(k * 9 + i) * 0.1 + k * WIND[0] * 0.9, y + 0.2 + k * 1.5, z + (j - 0.5) * 0.3 + k * WIND[1] * 0.9);
+      sp.scale.setScalar(0.08 * (1 - k * 0.5));
+      sp.material.opacity = 1 - k;
     }
   }
 
@@ -540,17 +611,37 @@
   // ---------------------------------------------------------------- proyektil & efek
 
   function syncProjectiles(s) {
-    const fog = s.fog;
+    const fog = s.fog, now = performance.now(), live = new Set(), vis = (x, y) => !!fog.visible[idx(BF.clamp(x | 0, 0, N - 1), BF.clamp(y | 0, 0, N - 1))];
+    // Panah yang sudah kena: menancap di bangunan, atau di tanah bila sasarannya tewas/hilang (sasaran hidup: masuk ke badan).
+    for (const [p, f] of W.fly) {
+      if (s.projectiles.includes(p)) continue;
+      W.fly.delete(p);
+      const tg = s.byId.get(p.tid);
+      if (!p.splash && (!tg || tg.dead || tg.kind === 'building')) W.stuck.push(Object.assign(f, { t0: now, ground: !tg || tg.dead }));
+    }
+    if (W.stuck.length > 60) W.stuck.splice(0, W.stuck.length - 60);
+    W.stuck = W.stuck.filter(a => now - a.t0 < 6000);
+    for (const a of W.stuck) {
+      if (!vis(a.x, a.y)) continue;
+      const m = take('arrow', () => new THREE.Mesh(gfx.arrowGeo, M.flat)), gy = BF.relief.at(a.x, a.y);
+      if (a.ground) { m.position.set(a.x - a.dx * 0.1, gy + 0.11, a.y - a.dz * 0.1); m.lookAt(a.x + a.dx * 0.5, gy - 0.4, a.y + a.dz * 0.5); }
+      else { m.position.set(a.x - a.dx * 0.12, a.h, a.y - a.dz * 0.12); m.lookAt(a.x + a.dx, a.h + a.slope * 0.5, a.y + a.dz); }
+    }
     for (const p of s.projectiles) {
-      if (!fog.visible[idx(BF.clamp(p.x | 0, 0, N - 1), BF.clamp(p.y | 0, 0, N - 1))]) continue;
+      live.add(p);
+      if (!vis(p.x, p.y)) continue;
       const total = BF.dist(p.tx - p.sx, p.ty - p.sy) || 1, done = BF.clamp(BF.dist(p.x - p.sx, p.y - p.sy) / total, 0, 1);
       const arc = p.splash ? 2.2 : 0.3 + total * 0.06, h = BF.relief.at(p.x, p.y) + 0.55 * (1 - done) + 0.35 * done + Math.sin(done * Math.PI) * arc;
       const slope = (Math.cos(done * Math.PI) * Math.PI * arc - 0.2) / total;        // dh/ds, untuk arah panah
-      if (p.splash) take('rock', () => { const m = new THREE.Mesh(gfx.rockGeo, M.flat); m.castShadow = true; return m; }).position.set(p.x, h, p.y);
-      else {
+      if (p.splash) {
+        const m = take('rock', () => { const q = new THREE.Mesh(gfx.rockGeo, M.rock); q.castShadow = true; return q; });
+        m.position.set(p.x, h, p.y);
+        m.rotation.set(now * 0.007, now * 0.005, 0);                              // batu berputar di udara
+      } else {
         const m = take('arrow', () => new THREE.Mesh(gfx.arrowGeo, M.flat)), dx = p.tx - p.x, dz = p.ty - p.y, l = Math.hypot(dx, dz) || 1;
         m.position.set(p.x, h, p.y);
         m.lookAt(p.x + dx / l, h + slope, p.y + dz / l);
+        W.fly.set(p, { x: p.x, y: p.y, h, dx: dx / l, dz: dz / l, slope });
       }
     }
   }
@@ -609,16 +700,30 @@
         m.position.y = BF.relief.at(e.x, e.y) - Math.pow(Math.max(0, k - 0.7) / 0.3, 2) * (e.type === 'death' ? 0.3 : 0.5);      // tenggelam perlahan di akhir
         if (m.userData.ruin) m.userData.ruin.plane.constant = m.userData.ruin.h + m.position.y;
       } else if (e.type === 'boom') {
-        for (let i = 0; i < 5; i++) {
-          const a = i * 1.26, sp = take('dust', sprite('dust'));
-          sp.position.set(e.x + Math.cos(a) * e.r * (0.3 + k), BF.relief.at(e.x, e.y) + 0.35 + k * 0.9, e.y + Math.sin(a) * e.r * (0.3 + k));
-          sp.scale.setScalar((0.5 + k * 1.3) * Math.max(0.8, e.r));
-          sp.material.opacity = 0.75 * (1 - k);
+        // hantaman batu / bangunan runtuh: cincin debu yang mengembang dan membumbung, serpihan batu & kayu terlempar melengkung
+        if (!seen) continue;
+        const gy = BF.relief.at(e.x, e.y), big = e.life > 0.6, seed = (e.x * 131 + e.y * 71) | 0, kk = 1 - (1 - k) * (1 - k), nd = big ? 9 : 6;
+        for (let i = 0; i < nd; i++) {
+          const j = frand(seed, i), a = i / nd * TAU + j, rr = e.r * (0.2 + kk * (0.8 + j * 0.5)), sp = take('dust', sprite('dust'));
+          sp.position.set(e.x + Math.cos(a) * rr, gy + 0.15 + kk * (big ? 1.1 : 0.6) * (0.5 + j), e.y + Math.sin(a) * rr);
+          sp.scale.setScalar((0.45 + kk * 1.4) * Math.max(0.7, e.r) * (0.8 + j * 0.4));
+          sp.material.rotation = j * 6.28 + kk;
+          sp.material.color.setScalar(1);
+          sp.material.opacity = 0.85 * (1 - k) * Math.min(1, k * 8);
+        }
+        for (let i = 0, nc = big ? 10 : 6; i < nc; i++) {
+          const j = frand(seed + 3, i), j2 = frand(seed + 9, i), a = j * TAU, sp = (1.2 + j2 * 2.2) * Math.max(0.6, Math.min(1.4, e.r)), vy = 2.2 + j * 2.5;
+          const tt = Math.min(e.t, (vy + Math.sqrt(vy * vy + 5.9)) / 9.8), hh = 0.3 + vy * tt - 4.9 * tt * tt, wood = i % 3 === 0;
+          const m = take(wood ? 'chipW' : 'chipS', () => { const q = new THREE.Mesh(gfx.chipGeo[wood ? 1 : 0], M.chip[wood ? 1 : 0]); q.castShadow = true; return q; });
+          m.position.set(e.x + Math.cos(a) * sp * tt, gy + Math.max(0.02, hh), e.y + Math.sin(a) * sp * tt);
+          m.rotation.set(tt * 9 * j, tt * 7, tt * 11 * j2);
+          m.scale.setScalar((0.6 + j2 * 0.8) * (big ? 1.2 : 0.9) * (k > 0.85 ? (1 - k) / 0.15 : 1));
         }
       } else if (e.type === 'hit') {
         const sp = take('spark', sprite('spark'));
         sp.position.set(e.x, BF.relief.at(e.x, e.y) + 0.55, e.y);
-        sp.scale.setScalar(0.22 + k * 0.3);
+        sp.scale.setScalar(0.2 + k * 0.25);
+        sp.material.rotation = e.x * 7;
         sp.material.opacity = 1 - k;
       }
     }

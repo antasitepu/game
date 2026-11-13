@@ -40,6 +40,7 @@
     };
     const g = relief.grid = new Float32Array(G * G);
     relief.lock = null;
+    relief.map = map;
     for (let iy = 0; iy < G; iy++)
       for (let ix = 0; ix < G; ix++) {
         const x = ix / R, y = iy / R;
@@ -54,8 +55,11 @@
     return g;
   };
 
-  // Tinggi tanah di titik dunia (x, y). 0 bila belum ada peta.
+  // Tinggi tanah di titik dunia (x, y). Kisi dibuat seketika untuk peta permainan yang sedang aktif bila belum ada
+  // (kamera bisa dipusatkan sebelum frame pertama dirender). 0 bila belum ada permainan.
   relief.at = function (x, y) {
+    const s = BF.game && BF.game.s;
+    if (s && s.map !== relief.map) relief.build(s.map, s.seed);
     const g = relief.grid;
     if (!g) return 0;
     const fx = Math.min(G - 1.001, Math.max(0, x * R)), fy = Math.min(G - 1.001, Math.max(0, y * R)), ix = fx | 0, iy = fy | 0, ax = fx - ix, ay = fy - iy, i = iy * G + ix;

@@ -1462,7 +1462,8 @@
 
   models.arrow = function () {
     const b = new MB();
-    b.box('flat', -0.008, -0.008, -0.2, 0.008, 0.008, 0.2, C('#e9dcc0'), 1, 1);
+    b.box('flat', -0.008, -0.008, -0.2, 0.008, 0.008, 0.2, C('#a8835a'), 1, 1);
+    for (const k of [-1, 1]) b.box('flat', k * 0.012 - 0.002, -0.012, -0.2, k * 0.012 + 0.002, 0.012, -0.13, C('#ece6da'), 1, 1);   // bulu ekor panah
     b.geom('flat', new THREE.ConeGeometry(0.02, 0.07, 4), new THREE.Matrix4().makeTranslation(0, 0, 0.22).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), STEEL);
     return b.geometry('flat');
   };
