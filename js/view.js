@@ -10,7 +10,7 @@
   const view = BF.view = {
     ZOOM_MIN: 8, ZOOM_MAX: 38, ZOOM_DEFAULT: 17, YAW_DEFAULT: Math.PI / 4,
     // Tinggi (satuan tile) objek tegak: dipakai untuk klik pada badan objek dan posisi bar HP.
-    BUILD_H: { townhall: 4.6, house: 1.9, farm: 0.08, storage: 2.0, barracks: 1.9, range: 1.2, stable: 1.8, smithy: 2.0, workshop: 2.0, tower: 4.6, wall: 1.3, gate: 1.9 },
+    BUILD_H: { townhall: 4.6, house: 1.9, farm: 0.08, storage: 2.0, barracks: 1.9, range: 1.2, stable: 1.8, smithy: 2.0, workshop: 2.0, tower: 4.6, wall: 1.3, gate: 1.9, market: 1.9 },
     NODE_H: { 1: 2.7, 2: 0.6, 3: 0.75, 4: 0.75 },
     camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 600),
     w: 1, h: 1,

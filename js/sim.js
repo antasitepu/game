@@ -103,6 +103,7 @@
       byId: new Map(), players: [], human: opts.human || 0, over: false, winner: -1, hasDead: false,
       difficulty: opts.difficulty || 'normal', mp: !!opts.mp,
       fog: { explored: new Uint8Array(N * N), visible: new Uint8Array(N * N), version: 0 },
+      market: Object.assign({}, BF.MARKET.base),
     };
     const ai = opts.ai || [false, true], fkeys = Object.keys(BF.FACTIONS);
     for (let i = 0; i < 2; i++) {
@@ -215,11 +216,36 @@
     let h = 2166136261 >>> 0;
     const mix = v => { h ^= v | 0; h = Math.imul(h, 16777619) >>> 0; };
     mix(s.tick); mix(s.nextId); mix(s.rng);
+    for (const r in s.market) mix(Math.round(s.market[r] * 100));
     for (const u of s.units) { mix(u.id); mix(Math.round(u.x * 1000)); mix(Math.round(u.y * 1000)); mix(Math.round(u.hp * 100)); }
     for (const b of s.buildings) { mix(b.id); mix(Math.round(b.hp * 100)); mix(Math.round(b.progress * 1000)); mix(b.inside.length); }
     for (const a of s.animals) { mix(a.id); mix(Math.round(a.x * 1000)); mix(Math.round(a.y * 1000)); mix(Math.round(a.hp * 100)); mix(a.food); }
     for (const p of s.players) { for (const r of BF.RES) mix(Math.round(p.res[r])); mix(p.pop); mix(p.era); mix(p.techs.length); }
     return h;
+  };
+
+  // ---------------------------------------------------------------- pasar
+
+  // Emas yang dibayar untuk membeli (buy) atau diterima dari menjual satu lot sumber daya res pada harga saat ini.
+  BF.tradeQuote = function (s, res, buy) {
+    return buy ? Math.ceil(s.market[res] * (1 + BF.MARKET.fee)) : Math.floor(s.market[res] * (1 - BF.MARKET.fee));
+  };
+
+  // Satu transaksi satu lot untuk pemain p. false bila stoknya tidak cukup.
+  BF.trade = function (s, p, res, buy) {
+    const M = BF.MARKET, q = BF.tradeQuote(s, res, buy);
+    if (buy) {
+      if (p.res.gold < q) return false;
+      p.res.gold -= q;
+      p.res[res] += M.lot;
+      s.market[res] = Math.min(M.max, s.market[res] * (1 + M.step));
+    } else {
+      if (p.res[res] < M.lot) return false;
+      p.res[res] -= M.lot;
+      p.res.gold += q;
+      s.market[res] = Math.max(M.min, s.market[res] * (1 - M.step));
+    }
+    return true;
   };
 
   // ---------------------------------------------------------------- order
@@ -1083,6 +1109,7 @@
       s.hasDead = false;
     }
     if (s.events.length > 400) s.events.splice(0, s.events.length - 400);
+    if (s.tick % 200 === 0) for (const r in s.market) s.market[r] += (BF.MARKET.base[r] - s.market[r]) * BF.MARKET.drift;
     if (s.tick % 5 === 0) BF.updateFog(s);
     if (s.tick % 20 === 0) checkVictory(s);
   };

@@ -15,7 +15,7 @@ module.exports = async ({ page, check }) => {
   await p.drag(box.x0, box.y0, box.x1, box.y1);
   await p.sleep(150);
   check('seret-pilih 4 pekerja', (await p.ev(`BF.ui.sel.length`)) === 4);
-  check('menu bangun: 12 bangunan', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 12);
+  check('menu bangun: 11 bangunan + tombol halaman berikut', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 12 && await p.ev(`BF.hud.buttons[11].title === 'Bangunan lain' && BF.hud.buttons[10].title === 'Bangun Gerbang'`));
 
   const berry = await p.ev(H.node('BF.N_BERRY', 0));
   check('ada semak beri yang bisa diklik', !!berry);

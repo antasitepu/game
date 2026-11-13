@@ -793,6 +793,43 @@
         r.tube('flat', [0.5, 0.3, 2.1], [1.02, 0.3, 2.1], 0.05, 0.05, 7, BARK);
         break;
       }
+      case 'market': {                                  // pasar: los terbuka bertiang kayu, dua lapak bertenda warna tim, dagangan
+        r.meta.body = [[0.2, 0.3, 2.8, 1.76, 1.0]];
+        const x0 = 0.36, x1 = 2.64, z0 = 0.46, z1 = 1.6, g = 0.06, y1 = 1.0, wc = new THREE.Color(1.15, 1.03, 0.88), TOP = C('#d8bd96'), LINEN = C('#efe6d2');
+        r.plinth(x0 - 0.1, z0 - 0.1, x1 + 0.1, z1 + 0.1, g);                            // lantai batu
+        for (const x of span(x0, x1, 3)) {
+          for (const z of [z0, z1]) r.post(x, z, g, y1, 0.07);
+          for (const sd of [-1, 1]) if (x + sd * 0.2 > x0 && x + sd * 0.2 < x1) r.tube('planks', [x, y1 - 0.3, z1], [x + sd * 0.22, y1 - 0.04, z1], 0.02, 0.02, 4, TIMBER);   // penopang siku
+        }
+        for (const z of [z0, z1]) r.rail('planks', x0, z, x1, z, y1 - 0.07, y1, 0.07, TIMBER, true);
+        for (const x of [x0, x1]) r.rail('planks', x, z0, x, z1, y1 - 0.07, y1, 0.07, TIMBER, true);
+        r.block('planks', x0, z0 - 0.03, x1, z0 + 0.03, g, 0.52, wc);                     // dinding papan belakang setengah tinggi
+        r.gable('clay', 'x', x0 - 0.2, x1 + 0.2, z0, z1, y1, 0.62, 0.22, 0.05, { cap: true, end: ['planks', wc, x0, x1] });
+        r.gableFrame(S['x+'](x1), z0, z1, y1, 0.62);
+        r.gableFrame(S['x-'](x0), z0, z1, y1, 0.62);
+        const table = (tx0, tx1, tz0, tz1, h) => {
+          r.box('planks', tx0, h - 0.04, tz0, tx1, h, tz1, TOP, 1, 1, true);
+          for (const x of [tx0 + 0.04, tx1 - 0.04]) for (const z of [tz0 + 0.04, tz1 - 0.04]) r.post(x, z, 0, h - 0.04, 0.03);
+        };
+        const fruit = (x, z, y, col) => { for (let i = 0; i < 5; i++) r.ball('flat', x + (i % 3 - 1) * 0.055, y + (i > 2 ? 0.045 : 0), z + (i % 2) * 0.05 - (i > 2 ? 0.0 : 0.025), 0.034, col, 0); };
+        const bolt = (x, z, y, col) => r.tube('flat', [x - 0.13, y + 0.03, z], [x + 0.13, y + 0.03, z], 0.03, 0.03, 6, col);      // gulungan kain
+        // di dalam los: dua meja dagang, peti, karung, tong
+        table(0.56, 1.3, 0.92, 1.3, 0.36); table(1.7, 2.44, 0.92, 1.3, 0.36);
+        fruit(0.74, 1.1, 0.4, C('#c8423a')); fruit(1.1, 1.12, 0.4, C('#d9a940'));
+        bolt(1.9, 1.04, 0.36, r.team); bolt(1.92, 1.18, 0.36, LINEN); bolt(2.24, 1.1, 0.36, C('#8a5a3c'));
+        r.crate(1.5, 0.78, 0.2); r.crate(1.5, 0.78, 0.15, 0.2); r.sack(0.6, 0.7, 0.085); r.sack(0.78, 0.66, 0.08); r.barrel(2.46, 0.72);
+        // dua lapak depan: tiang, tenda miring bergaris warna tim, meja berisi dagangan
+        [[0.3, C('#6f9a4a')], [1.8, C('#c8423a')]].forEach(([ax, col], n) => {
+          for (const dx of [0, 0.9]) { r.post(ax + dx, 2.08, 0, 0.8, 0.04); r.post(ax + dx, 2.72, 0, 0.56, 0.04); }
+          for (let k = 0; k < 6; k++) r.shed('flat', 'x', ax - 0.06 + k * 0.17, ax - 0.06 + (k + 1) * 0.17, 2.0, 0.8, 2.82, 0.52, 0.014, k % 2 ? LINEN : r.team);
+          table(ax + 0.08, ax + 0.82, 2.24, 2.6, 0.32);
+          fruit(ax + 0.28, 2.4, 0.36, col); fruit(ax + 0.6, 2.42, 0.36, n ? C('#d9a940') : C('#e8dcc0'));
+        });
+        r.cart(1.48, 2.46, false);
+        r.sack(2.84, 2.2, 0.085); r.barrel(0.16, 2.3); r.crate(2.86, 1.86, 0.17);
+        r.flagPole(1.5, (z0 + z1) / 2, 1.6, 2.35);
+        break;
+      }
       case 'tower': {
         r.meta.body = [[0.04, 0.04, 0.96, 0.96, 3.3]];
         r.scan('menara', 0);                            // batang batu 0,68 × 0,68 → sisi-sisinya di 0,16 dan 0,84

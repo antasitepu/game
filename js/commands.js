@@ -90,6 +90,11 @@
       return BF.ungarrison(s, b);
     },
 
+    // Jual/beli satu lot sumber daya di pasar (harga di s.market).
+    trade(s, owner, res, buy) {
+      return BF.trade(s, s.players[owner], res, buy);
+    },
+
     stop(s, units) {
       for (const u of units) BF.setOrder(u, { type: 'idle' });
     },
@@ -207,6 +212,11 @@
       case 'repair': { const b = own(c.bid, 'building'); if (b && b.built) BF.cmd.repair(s, units(), b); break; }
       case 'patrol': if (num(c.x) && num(c.y)) BF.cmd.patrol(s, units(), c.x, c.y); break;
       case 'stance': if (c.v === 0 || c.v === 1 || c.v === 2) BF.cmd.stance(s, units(), c.v); break;
+      case 'trade': {
+        const b = own(c.bid, 'building');
+        if (b && b.built && b.type === 'market' && (c.res === 'food' || c.res === 'wood' || c.res === 'stone')) BF.cmd.trade(s, pid, c.res, !!c.buy);
+        break;
+      }
       case 'garrison': { const b = own(c.bid, 'building'); if (b) BF.cmd.garrison(s, units(), b); break; }
       case 'ungarrison': { const b = own(c.bid, 'building'); if (b) BF.cmd.ungarrison(s, b); break; }
       case 'dropoff': { const b = own(c.bid, 'building'); if (b && b.built && BF.BUILDINGS[b.type].dropoff) BF.cmd.dropoff(s, units(), b); break; }

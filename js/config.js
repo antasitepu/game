@@ -205,6 +205,10 @@ BF.BUILDINGS = {
     atk: 7, range: 7, cooldown: 1.6, garrison: 4,
     desc: 'Menembaki musuh yang mendekat.',
   },
+  market: {
+    name: 'Pasar', size: 3, era: 1, cost: { wood: 150 }, time: 35, hp: 900, sight: 5,
+    desc: 'Menukar Pangan, Kayu, dan Batu dengan Emas. Harga naik tiap dibeli, turun tiap dijual.',
+  },
   wall: {
     name: 'Tembok Batu', size: 1, era: 0, cost: { stone: 6 }, time: 6, hp: 700, sight: 2, barrier: true,
     desc: 'Menghalangi semua unit. Seret di peta untuk membangun sebaris tembok.',
@@ -215,7 +219,14 @@ BF.BUILDINGS = {
   },
 };
 
-BF.BUILD_MENU = ['house', 'farm', 'storage', 'barracks', 'range', 'stable', 'smithy', 'workshop', 'tower', 'wall', 'gate', 'townhall'];
+// Menu bangun pekerja: halaman utama (11 bangunan + tombol pindah halaman) dan halaman kedua.
+BF.BUILD_MENU = ['house', 'farm', 'storage', 'barracks', 'range', 'stable', 'smithy', 'workshop', 'tower', 'wall', 'gate'];
+BF.BUILD_MENU2 = ['market', 'townhall'];
+
+// Pasar: harga (emas per lot satuan) dipakai bersama kedua pemain. Membeli dikenai +fee, menjual −fee; tiap transaksi
+// menggeser harga sebesar step (beli → naik, jual → turun) dalam batas min..max, lalu tiap 10 detik harga kembali
+// mendekati harga dasar sebesar drift dari selisihnya.
+BF.MARKET = { lot: 100, base: { food: 100, wood: 100, stone: 130 }, fee: 0.3, step: 0.04, drift: 0.03, min: 25, max: 400 };
 
 // Teknologi: diteliti di bangunan `at`. req = teknologi prasyarat.
 BF.TECHS = {

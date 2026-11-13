@@ -12,7 +12,7 @@
 
   // State interaksi pemain (seleksi, mode penempatan, dsb). Dibaca juga oleh render & input.
   const ui = BF.ui = {
-    sel: [], placing: null, amove: false, garrison: false, patrol: false, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
+    sel: [], placing: null, amove: false, garrison: false, patrol: false, buildPage: 0, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
     mouse: { x: 0, y: 0, inside: false, onMap: false },
   };
   const hud = BF.hud = { buttons: [], sig: '', hover: -1, infoAt: 0, portraitKey: '', text: {}, ERR, endNote: '', waitSince: 0 };
@@ -25,6 +25,7 @@
     ui.amove = false;
     ui.garrison = false;
     ui.patrol = false;
+    ui.buildPage = 0;
     hud.infoAt = 0;
   };
   ui.reset = function () {
@@ -70,7 +71,12 @@
     const eraName = e => BF.ERAS[e].name;
     const stop = { glyph: '■', title: 'Berhenti', desc: 'Hentikan perintah saat ini.', action() { BF.issue({ c: 'stop', ids }); } };
     if (workers.length) {
-      BF.BUILD_MENU.forEach((t, i) => {
+      slots[11] = {
+        glyph: ui.buildPage ? '◂' : '▸', title: ui.buildPage ? 'Bangunan utama' : 'Bangunan lain',
+        desc: ui.buildPage ? 'Kembali ke daftar bangunan utama.' : 'Pasar dan Balai Kota.',
+        action() { ui.buildPage = ui.buildPage ? 0 : 1; },
+      };
+      (ui.buildPage ? BF.BUILD_MENU2 : BF.BUILD_MENU).forEach((t, i) => {
         const d = p.B[t];
         slots[i] = {
           icon: ['building', t], title: 'Bangun ' + d.name, cost: d.cost, desc: d.desc,
@@ -128,10 +134,25 @@
           };
         if (p.B[b.type].garrison)
           slots[10] = {
-            glyph: '⇱', key: 'G', title: 'Keluarkan semua', disabled: !b.inside.length,
+            glyph: '⇱', key: 'G', title: 'Keluarkan semua', disabled: !b.inside.length, why: 'Belum ada unit di dalam',
             desc: 'Semua unit yang berlindung di bangunan ini keluar.',
             action() { BF.issue({ c: 'ungarrison', bid: b.id }); hud.infoAt = 0; },
           };
+        if (b.type === 'market') {
+          // baris atas: jual 1 lot → emas; baris kedua: beli 1 lot dengan emas (harga terkini ada di judul tombol)
+          const lot = BF.MARKET.lot, note = 'Harga naik tiap kali dibeli dan turun tiap kali dijual, lalu perlahan kembali normal.';
+          ['food', 'wood', 'stone'].forEach((r, k) => {
+            const name = BF.RES_LABEL[r], sell = BF.tradeQuote(s, r, false), buy = BF.tradeQuote(s, r, true);
+            slots[k] = {
+              glyph: name[0] + '↑', title: `Jual ${lot} ${name} → ${sell} Emas`, cost: { [r]: lot }, desc: note, poor: p.res[r] < lot,
+              action() { if (p.res[r] < lot) return hud.fail(ERR.res); BF.issue({ c: 'trade', bid: b.id, res: r, buy: false }); },
+            };
+            slots[4 + k] = {
+              glyph: name[0] + '↓', title: `Beli ${lot} ${name}`, cost: { gold: buy }, desc: note, poor: p.res.gold < buy,
+              action() { if (p.res.gold < buy) return hud.fail(ERR.res); BF.issue({ c: 'trade', bid: b.id, res: r, buy: true }); },
+            };
+          });
+        }
         const put = btn => { while (slots[i]) i++; if (i < 11) slots[i++] = btn; };
         for (const ut of BF.trainable(p, b.type)) {
           const ud = p.U[ut];
@@ -214,7 +235,7 @@
     tip.innerHTML = `<div class="tt-title">${b.title}<span class="tt-key">${b.key}</span></div>` +
       (b.cost ? `<div class="tt-cost">${costHtml(p, b.cost)}</div>` : '') +
       (b.locked ? `<div class="tt-lock">Butuh ${b.locked}</div>` : '') +
-      (b.disabled ? '<div class="tt-lock">Sedang berlangsung</div>' : '') +
+      (b.disabled ? `<div class="tt-lock">${b.why || 'Sedang berlangsung'}</div>` : '') +
       `<div class="tt-desc">${b.desc || ''}</div>`;
     tip.classList.remove('hidden');
     const r = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
@@ -299,6 +320,8 @@
           const n = s.units.filter(u => !u.dead && u.owner === me && u.order.type === 'repair' && u.order.bid === e.id).length;
           html += n ? `<div class="status">Sedang diperbaiki · ${n} pekerja</div>` : '<div class="status warn">Rusak — pilih pekerja lalu klik kanan bangunan ini untuk memperbaiki</div>';
         }
+        if (e.built && e.owner === me && e.type === 'market')
+          html += `<div class="status">Harga per ${BF.MARKET.lot}: ` + ['food', 'wood', 'stone'].map(r => `${BF.RES_LABEL[r]} ${Math.round(s.market[r])}`).join(' · ') + ' Emas</div>';
         if (e.built && e.owner === me && d.garrison)
           html += `<div class="status">Berlindung: ${e.inside.length}/${d.garrison} unit${e.inside.length ? '' : ' · pilih unit, tekan G, lalu klik bangunan ini'}</div>`;
         if (e.built && e.owner === me) {

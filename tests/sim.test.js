@@ -322,5 +322,54 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('serang jarak dekat melewati sudut penghalang (tidak macet)', foe.dead, { hpMusuh: foe.dead ? 0 : foe.hp, x: me.x.toFixed(2), y: me.y.toFixed(2) });
 }
 
+// 11. Pasar: syarat era, validasi, harga bergeser tiap transaksi lalu kembali normal, dipakai bersama, ikut tersimpan
+{
+  const mk = () => { const s = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }); s.animals.length = 0; return s; };
+  const s = mk(), p = s.players[0], q = s.players[1], th = s.buildings.find(b => b.owner === 0 && b.type === 'townhall');
+  const spot = (owner, dx) => { const t = s.buildings.find(b => b.owner === owner && b.type === 'townhall'); for (let r = 4; r < 14; r++) for (let d = -r; d <= r; d++) for (const [x, y] of [[t.tx + d, t.ty + r], [t.tx + r + dx, t.ty + d]]) if (BF.canPlace(s.map, 'market', x, y)) return { x, y }; };
+  p.res = { food: 1000, wood: 1000, gold: 1000, stone: 1000 };
+  q.res = { food: 1000, wood: 1000, gold: 1000, stone: 1000 };
+  const a = spot(0, 0);
+  check('Pasar belum bisa dibangun di Era Perintis', BF.cmd.place(s, 0, 'market', a.x, a.y).err === 'era');
+  p.era = q.era = 1;
+  const mine = BF.spawnBuilding(s, 'market', 0, a.x, a.y, false), b2 = spot(1, 0), theirs = BF.spawnBuilding(s, 'market', 1, b2.x, b2.y, true);
+  const snap = () => JSON.stringify([p.res, q.res, s.market]);
+  let before = snap();
+  BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'wood', buy: false });
+  BF.exec(s, 0, { c: 'trade', bid: theirs.id, res: 'wood', buy: false });
+  BF.exec(s, 0, { c: 'trade', bid: th.id, res: 'wood', buy: false });
+  check('berdagang butuh Pasar sendiri yang sudah jadi', snap() === before);
+  mine.built = true; mine.progress = 1; mine.hp = BF.bldDef(s, mine).hp;
+  BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'gold', buy: true });
+  BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'pop', buy: false });
+  check('sumber daya yang tak diperdagangkan ditolak', snap() === before);
+
+  BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'wood', buy: false });
+  check('jual 100 Kayu → +70 Emas, harga Kayu turun 4%', p.res.wood === 900 && p.res.gold === 1070 && Math.abs(s.market.wood - 96) < 1e-9, { emas: p.res.gold, harga: s.market.wood });
+  BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'food', buy: true });
+  check('beli 100 Pangan → −130 Emas, harga Pangan naik 4%', p.res.food === 1100 && p.res.gold === 940 && Math.abs(s.market.food - 104) < 1e-9, { emas: p.res.gold, harga: s.market.food });
+  BF.exec(s, 1, { c: 'trade', bid: theirs.id, res: 'food', buy: true });
+  check('harga dipakai bersama: pembelian lawan ikut menaikkannya', q.res.gold === 1000 - Math.ceil(104 * 1.3) && s.market.food > 108, { emasLawan: q.res.gold, harga: s.market.food.toFixed(2) });
+
+  const g0 = p.res.gold;
+  for (let i = 0; i < 3; i++) { BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'stone', buy: true }); BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'stone', buy: false }); }
+  check('beli lalu jual lagi selalu rugi (tak bisa dieksploitasi)', p.res.gold < g0 - 150 && p.res.stone === 1000, { rugi: g0 - p.res.gold });
+
+  p.res.wood = 100000;
+  for (let i = 0; i < 60; i++) BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'wood', buy: false });
+  check('harga tidak turun di bawah batas minimum', s.market.wood === BF.MARKET.min, { harga: s.market.wood });
+  p.res.gold = 0;
+  before = snap();
+  BF.exec(s, 0, { c: 'trade', bid: mine.id, res: 'food', buy: true });
+  check('emas tidak cukup → pembelian ditolak', snap() === before);
+
+  const h0 = BF.hash(s), d = JSON.parse(JSON.stringify(BF.serialize(s))), s2 = BF.deserialize(d);
+  check('harga pasar ikut tersimpan', BF.hash(s2) === h0 && s2.market.wood === s.market.wood);
+  delete d.market;
+  check('simpanan lama tanpa pasar dimuat dengan harga dasar', BF.deserialize(d).market.stone === BF.MARKET.base.stone);
+  run(s, 20 * 60 * 6);
+  check('harga perlahan kembali ke harga dasar', s.market.wood > 60 && s.market.wood <= 100 && Math.abs(s.market.food - 100) < 5, { kayu: s.market.wood.toFixed(1), pangan: s.market.food.toFixed(1) });
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

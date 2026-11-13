@@ -40,6 +40,30 @@ module.exports = async ({ page, check }) => {
   check('riset selesai: efek & pesan', await p.ev(`(() => { const q = BF.game.s.players[0]; return q.techs.join() === 'kapak' && Math.abs(q.mod.gather.wood - 1.296) < 1e-9 && document.getElementById('toast').textContent.includes('Kapak Ganda'); })()`));
   check('teknologi yang selesai hilang dari panel', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 3);
 
+  // ---- pasar: halaman kedua menu bangun, lalu jual & beli lewat tombol panel
+  await p.ev(`(() => { const s = BF.game.s; BF.ui.select([s.units.find(u => u.owner === 0 && u.type === 'worker').id]); })()`);
+  await p.sleep(250);
+  await p.key('v', 'KeyV', 86);
+  await p.sleep(250);
+  check('V → halaman kedua menu bangun: Pasar, Balai Kota, kembali', (await p.ev(`BF.hud.buttons.filter(Boolean).map(b => b.title).join('|')`)) === 'Bangun Pasar|Bangun Balai Kota|Bangunan utama');
+  await p.key('q', 'KeyQ', 81);
+  await p.sleep(150);
+  check('Pasar terkunci sebelum Era Baja', await p.ev(`BF.ui.placing === null && document.getElementById('toast').textContent.includes('Era Baja')`));
+  await p.ev(`BF.game.s.players[0].era = 1`);
+  await p.key('q', 'KeyQ', 81);
+  await p.sleep(150);
+  check('setelah Era Baja: Q → mode penempatan Pasar', (await p.ev(`BF.ui.placing`)) === 'market');
+  await p.ev(`(() => { const s = BF.game.s, th = s.buildings[0]; let spot = null; for (let r = 4; r < 14 && !spot; r++) for (let d = -r; d <= r && !spot; d++) for (const [tx, ty] of [[th.tx + d, th.ty + r], [th.tx + r, th.ty + d]]) if (!spot && BF.canPlace(s.map, 'market', tx, ty)) spot = { tx, ty }; const m = BF.spawnBuilding(s, 'market', 0, spot.tx, spot.ty, true); BF.updateFog(s); window.__mk = { id: m.id, gold: s.players[0].res.gold, food: s.players[0].res.food }; BF.ui.select([m.id]); BF.input.centerOn(spot.tx + 1.5, spot.ty + 1.5); })()`);
+  await p.sleep(400);
+  await p.clickEl('#cmds .cmd:nth-child(1)');   // Q: Jual Pangan
+  await p.sleep(350);
+  check('klik Jual Pangan: pangan −100, emas +70, harga di tombol turun', await p.ev(`(() => { const r = BF.game.s.players[0].res; return r.food === window.__mk.food - 100 && r.gold === window.__mk.gold + 70 && BF.hud.buttons[0].title === 'Jual 100 Pangan → 67 Emas'; })()`), await p.ev(`BF.hud.buttons[0].title`));
+  await p.key('s', 'KeyS', 83);                  // S: Beli Kayu
+  await p.sleep(350);
+  check('S → Beli Kayu: emas −130, panel menampilkan harga baru', await p.ev(`BF.game.s.players[0].res.gold === window.__mk.gold + 70 - 130 && document.getElementById('info-body').textContent.includes('Pangan 96 · Kayu 104 · Batu 130')`), await p.ev(`document.getElementById('info-body').textContent`));
+  await p.shot('14-pasar');
+  await p.ev(`(() => { const r = BF.game.s.players[0].res; r.wood -= 100; r.food += 100; })()`);   // kembalikan stok untuk tes berikutnya
+
   // ---- tembok: seret sebaris 6 tile
   await p.key('h', 'KeyH', 72);
   await p.sleep(150);
