@@ -12,7 +12,7 @@
 
   // State interaksi pemain (seleksi, mode penempatan, dsb). Dibaca juga oleh render & input.
   const ui = BF.ui = {
-    sel: [], placing: null, amove: false, garrison: false, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
+    sel: [], placing: null, amove: false, garrison: false, patrol: false, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
     mouse: { x: 0, y: 0, inside: false, onMap: false },
   };
   const hud = BF.hud = { buttons: [], sig: '', hover: -1, infoAt: 0, portraitKey: '', text: {}, ERR, endNote: '', waitSince: 0 };
@@ -24,6 +24,7 @@
     ui.wallStart = null;
     ui.amove = false;
     ui.garrison = false;
+    ui.patrol = false;
     hud.infoAt = 0;
   };
   ui.reset = function () {
@@ -81,6 +82,7 @@
             ui.wallStart = null;
             ui.amove = false;
             ui.garrison = false;
+            ui.patrol = false;
           },
         };
       });
@@ -88,7 +90,7 @@
       slots[4] = {
         glyph: '⚔', title: 'Gerak-Serang', active: ui.amove,
         desc: 'Lalu klik kiri pada peta: pasukan bergerak ke sana sambil menyerang musuh yang ditemui.',
-        action() { ui.amove = true; ui.garrison = false; ui.placing = null; },
+        action() { ui.amove = true; ui.garrison = ui.patrol = false; ui.placing = null; },
       };
       slots[5] = stop;
       slots[6] = {
@@ -96,6 +98,19 @@
         desc: 'Lalu klik kiri Balai Kota atau Menara Jaga milikmu: unit masuk, aman dari serangan, dan bangunan itu menembak lebih banyak panah. Bisa juga Alt + klik kanan.',
         action() { BF.input.garrisonMode(); },
       };
+      slots[7] = {
+        glyph: '⇄', title: 'Patroli', active: ui.patrol,
+        desc: 'Lalu klik kiri pada peta: pasukan berjalan bolak-balik antara posisinya sekarang dan titik itu sambil menyerang musuh yang ditemui.',
+        action() { ui.patrol = true; ui.amove = ui.garrison = false; ui.placing = null; },
+      };
+      // sikap: tombol menyala bila semua unit tempur terpilih memakai sikap itu
+      const fighters = units.filter(u => p.U[u.type].atk), cur = fighters.length && fighters.every(u => (u.stance || 0) === (fighters[0].stance || 0)) ? fighters[0].stance || 0 : -1;
+      if (fighters.length) BF.STANCES.forEach((st, v) => {
+        slots[8 + v] = {
+          glyph: ['➤', '◆', '○'][v], title: 'Sikap: ' + st.name, desc: st.desc, active: cur === v,
+          action() { BF.issue({ c: 'stance', ids: fighters.map(u => u.id), v }); hud.infoAt = 0; },
+        };
+      });
     } else if (own.length === 1 && own[0].kind === 'building') {
       const b = own[0];
       if (b.built) {
@@ -232,6 +247,8 @@
       case 'attack': return 'Menyerang';
       case 'build': return 'Membangun';
       case 'repair': return 'Memperbaiki';
+      case 'patrol': return 'Berpatroli';
+      case 'garrison': return 'Menuju tempat berlindung';
       case 'gather': return o.state === 'return' ? 'Menyetor ' + BF.RES_LABEL[o.res] : o.animal ? (o.state === 'work' ? 'Menguliti buruan' : 'Berburu') : 'Mengumpulkan ' + BF.RES_LABEL[o.res];
       default: return 'Menganggur';
     }
@@ -271,7 +288,8 @@
         pk = 'unit:' + e.type + ':' + e.owner;
         html = head(d.name) + hpHtml(e.hp, d.hp) + combatHtml(d) +
           (e.owner === me ? `<div class="status">${statusOf(e)}` +
-            (e.carry > 0 ? ` · membawa ${e.carry} ${BF.RES_LABEL[e.carryType]}` : '') + '</div>' : '');
+            (e.carry > 0 ? ` · membawa ${e.carry} ${BF.RES_LABEL[e.carryType]}` : '') +
+            (d.atk ? ' · Sikap: ' + BF.STANCES[e.stance || 0].name : '') + '</div>' : '');
       } else {
         const d = BF.bldDef(s, e);
         pk = 'building:' + e.type + ':' + e.owner;

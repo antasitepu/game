@@ -112,7 +112,23 @@ module.exports = async ({ page, check }) => {
   await p.sleep(100);
   check('klik kanan musuh → perintah serang', await p.ev(`(() => { const o = BF.game.s.byId.get(window.__t.me).order; return o.type === 'attack' && o.tid === window.__t.foe; })()`));
   await step(20 * 12);
-  check('musuh tewas & tercatat', await p.ev(`!BF.game.s.byId.has(window.__t.foe) && BF.game.s.players[0].kills === 1`));
+  check('musuh tewas & tercatat', await p.ev(`!BF.game.s.byId.has(window.__t.foe) && BF.game.s.players[0].kills === 1`), await p.ev(`(() => { const s = BF.game.s, me = s.byId.get(window.__t.me), foe = s.byId.get(window.__t.foe); return { kills: s.players[0].kills, me: me && { x: +me.x.toFixed(1), y: +me.y.toFixed(1), hp: me.hp, o: me.order.type, tid: me.order.tid }, foe: foe && { x: +foe.x.toFixed(1), y: +foe.y.toFixed(1), hp: foe.hp, o: foe.order.type } }; })()`));
+
+  // sikap & patroli lewat tombol panel (X = Bertahan, F = Patroli lalu klik peta)
+  const ME = 'BF.game.s.byId.get(window.__t.me)';
+  await p.ev(`(() => { const u = ${ME}; BF.ui.select([u.id]); BF.input.centerOn(u.x, u.y); })()`);
+  await p.sleep(250);
+  await p.key('x', 'KeyX', 88);
+  await p.sleep(350);
+  check('tombol X → sikap Bertahan, tampil di panel', await p.ev(`${ME}.stance === 1 && document.getElementById('info-body').textContent.includes('Sikap: Bertahan') && document.querySelectorAll('#cmds .cmd.active').length === 1`), await p.ev(`document.getElementById('info-body').textContent`));
+  await p.key('f', 'KeyF', 70);
+  await p.sleep(80);
+  check('F menyalakan mode patroli', await p.ev(`BF.ui.patrol === true`));
+  const pp = await p.ev(`(() => { const u = ${ME}; return BF.view.toScreen(u.x + 3, u.y + 1, 0); })()`);
+  await p.click(pp.x, pp.y);
+  await p.sleep(100);
+  check('klik peta → perintah patroli', await p.ev(`${ME}.order.type === 'patrol' && !BF.ui.patrol`));
+  await p.ev(`(() => { const s = BF.game.s; BF.exec(s, 0, { c: 'stop', ids: [window.__t.me] }); BF.exec(s, 0, { c: 'stance', ids: [window.__t.me], v: 0 }); })()`);
 
   await p.key('p', 'KeyP', 80);
   const t0 = await p.ev(`BF.game.s.tick`);

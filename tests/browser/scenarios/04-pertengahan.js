@@ -45,7 +45,7 @@ module.exports = async ({ page, check }) => {
   await p.ev(`(() => { const s = BF.game.s; BF.ui.select(s.units.filter(u => u.owner === 0 && u.type !== 'worker').map(u => u.id)); })()`);
   const n = await p.ev(`BF.ui.sel.length`);
   await p.sleep(200);
-  check('panel pasukan: Gerak-Serang + Berhenti + Berlindung', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 3 && n > 0, n);
+  check('panel pasukan: Gerak-Serang, Berhenti, Berlindung, Patroli, 3 sikap', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 7 && n > 0, n);
   await p.key('a', 'KeyA', 65);
   await p.sleep(100);
   check('A → mode gerak-serang', await p.ev(`BF.ui.amove === true`));

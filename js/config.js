@@ -35,6 +35,13 @@ BF.ANIMALS = {
 // Perbaikan bangunan oleh pekerja: tiap pekerja memulihkan nyawa secepat rate × laju membangun bangunan itu, dan
 // memulihkan nyawa dari nol sampai penuh menghabiskan cost × biaya bangunannya (ditagih sedikit demi sedikit).
 BF.REPAIR = { rate: 0.75, cost: 0.5 };
+// Sikap unit tempur saat tidak diperintah (u.stance = indeks): agresif mengejar musuh yang terlihat lalu kembali;
+// bertahan hanya menyerang yang masuk jangkauannya tanpa beranjak; diam tidak menyerang sama sekali, juga saat diserang.
+BF.STANCES = [
+  { name: 'Agresif', desc: 'Mengejar musuh yang terlihat, lalu kembali ke tempatnya.' },
+  { name: 'Bertahan', desc: 'Tetap di tempat; hanya menyerang musuh yang masuk jangkauan.' },
+  { name: 'Diam', desc: 'Tidak menyerang kecuali diperintah, juga saat diserang.' },
+];
 // Berlindung: unit berkelas cls boleh masuk ke bangunan sendiri yang punya kapasitas `garrison`. Di dalam, unit tak
 // bisa diserang dan pulih heal nyawa/detik; bangunannya menembak 1 panah tambahan per perArrow unit di dalamnya.
 BF.GARRISON = { cls: ['civil', 'infantry', 'archer'], heal: 0.5, perArrow: 2 };

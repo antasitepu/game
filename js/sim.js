@@ -130,7 +130,7 @@
     const u = {
       id: s.nextId++, kind: 'unit', type, owner, x, y, hp: d.hp, dir: Math.PI / 2,
       order: { type: 'idle' }, path: null, pi: 0, repathT: 0, cd: 0, atkAnim: 0, breach: 0,
-      carry: 0, carryType: null, moving: false, working: false, dead: false,
+      carry: 0, carryType: null, moving: false, working: false, stance: 0, dead: false,
     };
     s.units.push(u);
     s.byId.set(u.id, u);
@@ -331,12 +331,12 @@
       if (src && src.kind !== 'animal') s.players[src.owner].kills++;
       return;
     }
-    if (t.kind === 'unit' && src && !src.dead && src.owner !== t.owner && UD(s, t).atk) {
+    if (t.kind === 'unit' && src && !src.dead && src.owner !== t.owner && UD(s, t).atk && t.stance !== 2) {
       const o = t.order;
       if (o.type === 'idle') {
         t.path = null;
-        t.order = { type: 'attack', tid: src.id, auto: true, hx: t.x, hy: t.y };
-      } else if (o.type === 'amove') {
+        t.order = { type: 'attack', tid: src.id, auto: true, hold: t.stance === 1, hx: t.x, hy: t.y };
+      } else if (o.type === 'amove' || o.type === 'patrol') {
         t.path = null;
         o.planned = false;
         t.order = { type: 'attack', tid: src.id, resume: o };
@@ -372,8 +372,9 @@
     }
   }
 
-  function acquire(s, u, d) {
-    const aggro = Math.max(d.sight, d.range + 1);
+  // hold (sikap bertahan): hanya sasaran yang sudah berada dalam jangkauan serang.
+  function acquire(s, u, d, hold) {
+    const aggro = hold ? d.range + d.radius + 0.25 : Math.max(d.sight, d.range + 1);
     let best = null, bd = aggro;
     const scanUnits = () => {
       for (const t of s.units) {
@@ -419,6 +420,7 @@
       if (u.cd <= 0) fire(s, u, d, t);
       return;
     }
+    if (o.hold) { resume(u, o); return; }               // bertahan: sasaran di luar jangkauan dilepas, tidak dikejar
     if (o.auto && dist(u.x - o.hx, u.y - o.hy) > 10) {
       BF.setOrder(u, BF.moveOrder(s, o.hx, o.hy, false, u.owner));
       return;
@@ -430,9 +432,14 @@
     }
     if (isU) {
       if (gap < reach + 1.2) {
-        const dx = t.x - u.x, dy = t.y - u.y, l = dist(dx, dy) || 1;
-        const nx = u.x + dx / l * d.speed * DT, ny = u.y + dy / l * d.speed * DT;
-        if (BF.passable(s.map, Math.floor(nx), Math.floor(ny), u.owner)) {      // floor, bukan |0: −0,5 harus di luar peta
+        // Langkah lurus ke sasaran; bila terhalang sudut penghalang, bergeser pada satu sumbu saja (tanpa ini unit jarak
+        // dekat macet di tile serong dari sasarannya: jalur menganggapnya sudah tiba, padahal belum terjangkau). Geseran
+        // hanya dipakai bila komponennya cukup besar, supaya unit di balik tembok tetap jatuh ke pencarian jalur/dobrak.
+        const dx = t.x - u.x, dy = t.y - u.y, l = dist(dx, dy) || 1, st = d.speed * DT, sx = dx / l * st, sy = dy / l * st;
+        for (const [mx, my] of [[sx, sy], [sx, 0], [0, sy]]) {
+          if (Math.abs(mx) + Math.abs(my) < st * 0.35) continue;
+          const nx = u.x + mx, ny = u.y + my;
+          if (!BF.passable(s.map, Math.floor(nx), Math.floor(ny), u.owner)) continue;      // floor, bukan |0: −0,5 harus di luar peta
           u.x = nx; u.y = ny; u.dir = Math.atan2(dy, dx);
           u.moving = true; u.path = null; o.planned = false;
           return;
@@ -860,9 +867,19 @@
     const o = u.order;
     switch (o.type) {
       case 'idle':
+        if (d.atk && u.stance !== 2 && (s.tick + u.id) % 8 === 0) {
+          const t = acquire(s, u, d, u.stance === 1);
+          if (t) u.order = { type: 'attack', tid: t.id, auto: true, hold: u.stance === 1, hx: u.x, hy: u.y };
+        }
+        break;
+      case 'patrol':                                      // bolak-balik antara dua titik sambil menyerang musuh yang ditemui
         if (d.atk && (s.tick + u.id) % 8 === 0) {
           const t = acquire(s, u, d);
-          if (t) u.order = { type: 'attack', tid: t.id, auto: true, hx: u.x, hy: u.y };
+          if (t) { u.path = null; o.planned = false; u.order = { type: 'attack', tid: t.id, resume: o }; break; }
+        }
+        if (travel(s, u, o, o.goal, d.speed) === 2) {
+          const leg = o.pts[o.i = 1 - o.i];
+          o.x = leg.x; o.y = leg.y; o.goal = leg.goal; o.planned = false;
         }
         break;
       case 'move':

@@ -29,16 +29,16 @@
     clampCam();
   };
 
-  // Geser kamera sampai titik tanah di piksel (px, py) kembali ke titik dunia w (beberapa langkah: di lereng bukit,
-  // menggeser kamera ikut mengubah tinggi tanah yang kena).
+  // Geser kamera sehingga titik tanah w tampil tepat di piksel (px, py). Kamera ortografik: menggeser sasaran kamera
+  // menggeser semua sinar pandang sama jauhnya, jadi cukup satu langkah — samakan titik potong sinar pada bidang
+  // setinggi tanah di w dengan w (tepat di lereng securam apa pun, tanpa iterasi).
   function keepAt(px, py, w) {
     const c = game().cam;
-    for (let i = 0; i < 4; i++) {
-      view.update();
-      const now = view.toWorld(px, py);
-      c.x += w.x - now.x;
-      c.y += w.y - now.y;
-    }
+    view.update();
+    const q = view.planeAt(px, py, BF.relief.at(w.x, w.y));
+    c.x += w.x - q.x;
+    c.y += w.y - q.y;
+    view.update();
   }
 
   function zoomAt(px, py, factor) {
@@ -154,9 +154,19 @@
     const s = game().s, cls = BF.GARRISON.cls;
     if (!ownUnits(s).some(u => cls.indexOf(U[u.type].cls) >= 0)) return hud.fail('Unit ini tidak bisa berlindung');
     endPlacing(false);
-    ui.amove = false;
+    ui.amove = ui.patrol = false;
     ui.garrison = true;
   };
+
+  // Mode patroli: klik kiri pada peta menentukan ujung rute yang satunya.
+  function patrolTo(s, t) {
+    const us = ownUnits(s).filter(u => BF.unitDef(s, u).atk);
+    ui.patrol = false;
+    if (!us.length) return hud.fail('Unit ini tidak bisa berpatroli');
+    BF.issue({ c: 'patrol', ids: idsOf(us), x: t.x, y: t.y });
+    ping(t.x, t.y, '#93c5fd');
+    BF.audio.play('order');
+  }
 
   // Suruh unit terpilih berlindung di bangunan pada sasaran t (Balai Kota / Menara Jaga milik sendiri yang sudah jadi).
   function garrisonAt(s, t) {
@@ -317,7 +327,7 @@
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     switch (e.key) {
       case 'Escape':
-        if (ui.placing || ui.amove || ui.garrison) { endPlacing(false); ui.amove = ui.garrison = false; }
+        if (ui.placing || ui.amove || ui.garrison || ui.patrol) { endPlacing(false); ui.amove = ui.garrison = ui.patrol = false; }
         else if (ui.sel.length) ui.select([]);
         else BF.menu.openGameMenu();
         return;
@@ -362,7 +372,7 @@
     if (!ui.placing) ui.ghosts = [];
     else if (ui.wallStart) ui.ghosts = wallGhosts(s, w.x, w.y);
     else ui.ghosts = m.onMap ? [ghostAt(s, w.x, w.y)] : [];
-    g.canvas.style.cursor = rotating ? 'grabbing' : ui.placing ? 'copy' : ui.amove ? 'crosshair' : ui.garrison ? 'alias' : 'default';
+    g.canvas.style.cursor = rotating ? 'grabbing' : ui.placing ? 'copy' : ui.amove || ui.patrol ? 'crosshair' : ui.garrison ? 'alias' : 'default';
   };
 
   input.init = function (canvas, minimap) {
@@ -377,9 +387,10 @@
         else if (ui.placing) { ui.ghosts = [ghostAt(s, w.x, w.y)]; place(s, e.shiftKey); }
         else if (ui.amove) attackMove(s, targetAt(s, e.clientX, e.clientY));
         else if (ui.garrison) garrisonAt(s, targetAt(s, e.clientX, e.clientY));
+        else if (ui.patrol) patrolTo(s, w);
         else ui.drag = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
       } else if (e.button === 2) {
-        if (ui.placing || ui.amove || ui.garrison) { endPlacing(false); ui.amove = ui.garrison = false; }
+        if (ui.placing || ui.amove || ui.garrison || ui.patrol) { endPlacing(false); ui.amove = ui.garrison = ui.patrol = false; }
         else command(s, targetAt(s, e.clientX, e.clientY), e.altKey);
       }
     });

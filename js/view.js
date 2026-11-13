@@ -43,6 +43,12 @@
       return { o, d };
     },
 
+    // Titik potong sinar pandang di piksel layar dengan bidang datar setinggi h.
+    planeAt(px, py, h) {
+      const r = view.ray(px, py), t = (h - r.o.y) / r.d.y;
+      return { x: r.o.x + r.d.x * t, y: r.o.z + r.d.z * t };
+    },
+
     // Titik TANAH di bawah piksel layar: sinar ditelusuri dari ketinggian 4 ke bawah sampai pertama kali berada di bawah
     // permukaan relief, lalu titik potongnya dipersempit dengan bagi dua (tepat di lereng securam apa pun).
     toWorld(px, py) {

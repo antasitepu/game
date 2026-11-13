@@ -255,5 +255,72 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('AI: pekerja berlindung saat diserbu, keluar setelah aman', hid >= 3 && th4.inside.length === 0 && s4.units.filter(u => u.owner === 1 && u.type === 'worker').length >= 4, { berlindung: hid, sesudah: th4.inside.length });
 }
 
+// 10. Sikap unit & patroli
+{
+  // lahan uji datar tanpa penghalang di tengah peta; kedua pemain bukan AI, hewan disingkirkan
+  const mk = () => {
+    const s = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }), m = s.map;
+    s.animals.length = 0;
+    for (let y = 40; y < 56; y++) for (let x = 36; x < 60; x++) { const i = y * 96 + x; m.terrain[i] = 0; m.node[i] = 0; m.nodeAmt[i] = 0; m.block[i] = 0; m.bld[i] = 0; }
+    BF.finishMap(m);
+    s.players[0].popCap = s.players[1].popCap = 60;
+    return s;
+  };
+  const moved = (u, x, y) => BF.dist(u.x - x, u.y - y);
+
+  let s = mk(), me = BF.spawnUnit(s, 'spear', 0, 42.5, 48.5), foe = BF.spawnUnit(s, 'worker', 1, 46.5, 48.5);
+  check('unit baru bersikap agresif', me.stance === 0);
+  run(s, 20 * 6);
+  check('agresif: mengejar musuh yang terlihat', foe.dead || moved(me, 42.5, 48.5) > 1.5, { geser: moved(me, 42.5, 48.5).toFixed(2), musuhMati: foe.dead });
+
+  s = mk(); me = BF.spawnUnit(s, 'spear', 0, 42.5, 48.5); foe = BF.spawnUnit(s, 'worker', 1, 46.5, 48.5);
+  BF.exec(s, 1, { c: 'stance', ids: [me.id], v: 1 });
+  check('lawan tidak bisa mengubah sikap unit kita', me.stance === 0);
+  BF.exec(s, 0, { c: 'stance', ids: [me.id], v: 7 });
+  check('nilai sikap tak sah diabaikan', me.stance === 0);
+  BF.exec(s, 0, { c: 'stance', ids: [me.id], v: 1 });
+  run(s, 20 * 8);
+  check('bertahan: tidak beranjak mengejar musuh di luar jangkauan', me.stance === 1 && moved(me, 42.5, 48.5) < 0.05 && !foe.dead, { geser: moved(me, 42.5, 48.5).toFixed(3) });
+  BF.setOrder(foe, BF.moveOrder(s, 43.2, 48.5, false, 1));
+  run(s, 20 * 10);
+  check('bertahan: menyerang musuh yang masuk jangkauan, tetap di tempat', foe.dead && moved(me, 42.5, 48.5) < 0.6, { musuhMati: foe.dead, geser: moved(me, 42.5, 48.5).toFixed(2) });
+
+  s = mk(); me = BF.spawnUnit(s, 'spear', 0, 42.5, 48.5);
+  const arc = BF.spawnUnit(s, 'archer', 1, 46.5, 48.5);
+  BF.exec(s, 0, { c: 'stance', ids: [me.id], v: 1 });
+  run(s, 20 * 6);
+  check('bertahan: dipanah dari jauh pun tidak mengejar', me.hp < BF.UNITS.spear.hp && moved(me, 42.5, 48.5) < 0.05, { hp: me.hp });
+
+  s = mk(); me = BF.spawnUnit(s, 'spear', 0, 42.5, 48.5); foe = BF.spawnUnit(s, 'spear', 1, 43.3, 48.5);
+  BF.exec(s, 0, { c: 'stance', ids: [me.id], v: 2 });
+  run(s, 20 * 5);
+  check('diam: tidak membalas walau diserang', me.stance === 2 && foe.hp === s.players[1].U.spear.hp && (me.dead || me.hp < BF.UNITS.spear.hp), { hpKita: me.dead ? 0 : me.hp, hpMusuh: foe.hp });
+  if (!me.dead) { BF.exec(s, 0, { c: 'attack', ids: [me.id], tid: foe.id }); run(s, 20 * 3); }
+  check('diam: perintah serang langsung tetap dijalankan', me.dead || foe.dead || foe.hp < s.players[1].U.spear.hp);
+
+  // patroli: bolak-balik A ↔ B, menyerang musuh di rute lalu lanjut
+  s = mk(); me = BF.spawnUnit(s, 'sword', 0, 40.5, 50.5);
+  BF.exec(s, 1, { c: 'patrol', ids: [me.id], x: 52.5, y: 50.5 });
+  check('lawan tidak bisa menyuruh unit kita berpatroli', me.order.type === 'idle');
+  BF.exec(s, 0, { c: 'patrol', ids: [me.id], x: 52.5, y: 50.5 });
+  let nearB = 0, backA = 0, tB = 0;
+  for (let i = 0; i < 20 * 40; i++) { BF.step(s); s.events.length = 0; if (!nearB && moved(me, 52.5, 50.5) < 0.6) { nearB = 1; tB = i; } if (nearB && !backA && moved(me, 40.5, 50.5) < 0.6) backA = 1; }
+  check('patroli: sampai di titik tujuan lalu kembali ke titik awal', nearB === 1 && backA === 1 && me.order.type === 'patrol', { tickKeB: tB });
+  foe = BF.spawnUnit(s, 'worker', 1, 46.5, 51.5);
+  run(s, 20 * 25);
+  check('patroli: menyerang musuh di rute, lalu melanjutkan patroli', foe.dead && me.order.type === 'patrol', { musuhMati: foe.dead, perintah: me.order.type });
+  const s2 = BF.deserialize(JSON.parse(JSON.stringify(BF.serialize(s))));
+  run(s, 20 * 20); run(s2, 20 * 20);
+  check('patroli & sikap ikut tersimpan (lanjut setelah muat identik)', BF.hash(s) === BF.hash(s2) && s2.units.find(u => u.id === me.id).order.type === 'patrol');
+
+  // unit jarak dekat tidak macet bila sasarannya di tile serong di balik sudut penghalang
+  s = mk(); s.map.node[49 * 96 + 45] = BF.N_STONE; s.map.nodeAmt[49 * 96 + 45] = 100; BF.finishMap(s.map);
+  me = BF.spawnUnit(s, 'spear', 0, 45.5, 48.96); foe = BF.spawnUnit(s, 'worker', 1, 46.5, 49.5);
+  BF.exec(s, 0, { c: 'stance', ids: [me.id], v: 0 });
+  BF.exec(s, 0, { c: 'attack', ids: [me.id], tid: foe.id });
+  run(s, 20 * 12);
+  check('serang jarak dekat melewati sudut penghalang (tidak macet)', foe.dead, { hpMusuh: foe.dead ? 0 : foe.hp, x: me.x.toFixed(2), y: me.y.toFixed(2) });
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

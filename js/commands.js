@@ -25,6 +25,26 @@
       });
     },
 
+    // Patroli: tiap unit tempur bolak-balik antara posisinya sekarang dan titik tujuan (dalam formasi seperti move).
+    patrol(s, units, x, y) {
+      const n = units.length, cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols), sp = 0.9;
+      units.forEach((u, i) => {
+        if (!BF.unitDef(s, u).atk) return;
+        const ox = ((i % cols) - (cols - 1) / 2) * sp, oy = (Math.floor(i / cols) - (rows - 1) / 2) * sp;
+        const a = BF.moveOrder(s, u.x, u.y, false, u.owner), b = BF.moveOrder(s, x + ox, y + oy, false, u.owner);
+        BF.setOrder(u, { type: 'patrol', pts: [{ x: a.x, y: a.y, goal: a.goal }, { x: b.x, y: b.y, goal: b.goal }], i: 1, x: b.x, y: b.y, exact: true, goal: b.goal });
+      });
+    },
+
+    // Sikap (indeks BF.STANCES). Beralih dari agresif menghentikan pengejaran otomatis yang sedang berjalan.
+    stance(s, units, v) {
+      for (const u of units) {
+        if (!BF.unitDef(s, u).atk) continue;
+        u.stance = v;
+        if (v && u.order.type === 'attack' && u.order.auto) BF.setOrder(u, { type: 'idle' });
+      }
+    },
+
     attack(s, units, target) {
       for (const u of units) if (BF.unitDef(s, u).atk) BF.setOrder(u, { type: 'attack', tid: target.id });
     },
@@ -185,6 +205,8 @@
       case 'farm': { const f = own(c.bid, 'building'); if (f && f.type === 'farm' && f.built) BF.cmd.farm(s, units(), f); break; }
       case 'build': { const b = own(c.bid, 'building'); if (b && !b.built) BF.cmd.build(s, units(), b); break; }
       case 'repair': { const b = own(c.bid, 'building'); if (b && b.built) BF.cmd.repair(s, units(), b); break; }
+      case 'patrol': if (num(c.x) && num(c.y)) BF.cmd.patrol(s, units(), c.x, c.y); break;
+      case 'stance': if (c.v === 0 || c.v === 1 || c.v === 2) BF.cmd.stance(s, units(), c.v); break;
       case 'garrison': { const b = own(c.bid, 'building'); if (b) BF.cmd.garrison(s, units(), b); break; }
       case 'ungarrison': { const b = own(c.bid, 'building'); if (b) BF.cmd.ungarrison(s, b); break; }
       case 'dropoff': { const b = own(c.bid, 'building'); if (b && b.built && BF.BUILDINGS[b.type].dropoff) BF.cmd.dropoff(s, units(), b); break; }
