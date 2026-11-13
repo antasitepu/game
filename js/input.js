@@ -128,6 +128,14 @@
       ping(t.x, t.y, '#f87171');
       return;
     }
+    // klik kanan unit sendiri yang bisa disembuhkan: para Tabib terpilih menyembuhkannya, sisanya bergerak ke sana
+    const healers = e && e.kind === 'unit' && e.owner === me ? units.filter(u => BF.canHeal(s, u, e)) : [];
+    if (healers.length) {
+      BF.issue({ c: 'heal', ids: idsOf(healers), tid: e.id });
+      move(units.filter(u => healers.indexOf(u) < 0 && u !== e));
+      ping(e.x, e.y, '#4ade80');
+      return;
+    }
     if (e && e.kind === 'building' && workers.length) {
       const carriers = workers.filter(u => u.carry > 0), wids = idsOf(workers);
       if (!e.built) BF.issue({ c: 'build', ids: wids, bid: e.id });

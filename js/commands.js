@@ -68,9 +68,10 @@
     // Sikap (indeks BF.STANCES). Beralih dari agresif menghentikan pengejaran otomatis yang sedang berjalan.
     stance(s, units, v) {
       for (const u of units) {
-        if (!BF.unitDef(s, u).atk) continue;
+        const d = BF.unitDef(s, u);
+        if (!d.atk && !d.heal) continue;
         u.stance = v;
-        if (v && u.order.type === 'attack' && u.order.auto) BF.setOrder(u, { type: 'idle' });
+        if (v && (u.order.type === 'attack' || u.order.type === 'heal') && u.order.auto) BF.setOrder(u, { type: 'idle' });
       }
     },
 
@@ -100,6 +101,11 @@
     },
 
     // Perbaiki bangunan sendiri yang sudah jadi (sim.js menghentikannya bila nyawa penuh atau stok habis).
+    // Tabib menyembuhkan unit sendiri yang ditunjuk (mengikutinya sampai pulih).
+    heal(s, units, t) {
+      for (const u of units) if (BF.canHeal(s, u, t)) BF.setOrder(u, { type: 'heal', tid: t.id });
+    },
+
     repair(s, units, b) {
       for (const u of units) if (u.type === 'worker') BF.setOrder(u, { type: 'repair', bid: b.id });
     },
@@ -238,6 +244,7 @@
       case 'farm': { const f = own(c.bid, 'building'); if (f && f.type === 'farm' && f.built) BF.cmd.farm(s, units(), f); break; }
       case 'build': { const b = own(c.bid, 'building'); if (b && !b.built) BF.cmd.build(s, units(), b); break; }
       case 'repair': { const b = own(c.bid, 'building'); if (b && b.built) BF.cmd.repair(s, units(), b); break; }
+      case 'heal': { const t = own(c.tid, 'unit'); if (t) BF.cmd.heal(s, units(), t); break; }
       case 'patrol': if (num(c.x) && num(c.y)) BF.cmd.patrol(s, units(), c.x, c.y); break;
       case 'stance': if (c.v === 0 || c.v === 1 || c.v === 2) BF.cmd.stance(s, units(), c.v); break;
       case 'trade': {

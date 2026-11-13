@@ -48,9 +48,9 @@ BF.FORMATIONS = [
 // Sikap unit tempur saat tidak diperintah (u.stance = indeks): agresif mengejar musuh yang terlihat lalu kembali;
 // bertahan hanya menyerang yang masuk jangkauannya tanpa beranjak; diam tidak menyerang sama sekali, juga saat diserang.
 BF.STANCES = [
-  { name: 'Agresif', desc: 'Mengejar musuh yang terlihat; bila pengejaran melewati ±10 tile, kembali ke tempat semula.' },
-  { name: 'Bertahan', desc: 'Tetap di tempat; hanya menyerang musuh yang masuk jangkauan.' },
-  { name: 'Diam', desc: 'Tidak menyerang kecuali diperintah, juga saat diserang.' },
+  { name: 'Agresif', desc: 'Mengejar musuh yang terlihat; bila pengejaran melewati ±10 tile, kembali ke tempat semula.', heal: 'Mendatangi unit sendiri yang terluka dalam jarak pandang.' },
+  { name: 'Bertahan', desc: 'Tetap di tempat; hanya menyerang musuh yang masuk jangkauan.', heal: 'Tetap di tempat; hanya menyembuhkan yang terjangkau.' },
+  { name: 'Diam', desc: 'Tidak menyerang kecuali diperintah, juga saat diserang.', heal: 'Hanya menyembuhkan atas perintah.' },
 ];
 // Berlindung: unit berkelas cls boleh masuk ke bangunan sendiri yang punya kapasitas `garrison`. Di dalam, unit tak
 // bisa diserang dan pulih heal nyawa/detik; bangunannya menembak 1 panah tambahan per perArrow unit di dalamnya.
@@ -114,6 +114,14 @@ BF.UNITS = {
     hp: 30, atk: 0, armor: 0, range: 0, cooldown: 0, speed: 2.4, sight: 5, radius: 0.26,
     desc: 'Mengumpulkan sumber daya dan mendirikan bangunan.',
   },
+  // heal: nyawa/detik yang dipulihkan pada satu unit sendiri dalam healRange (bukan mesin kepung, bukan dirinya sendiri).
+  // Sikap menentukan inisiatifnya: Agresif mendatangi yang terluka dalam jarak pandang, Bertahan hanya yang terjangkau
+  // dari tempatnya, Diam hanya atas perintah.
+  healer: {
+    name: 'Tabib', cls: 'civil', era: 1, cost: { food: 40, gold: 60 }, time: 22, pop: 1,
+    hp: 40, atk: 0, armor: 0, range: 0, cooldown: 0, speed: 2.3, sight: 6, radius: 0.27, heal: 3, healRange: 2.5,
+    desc: 'Memulihkan nyawa unit sendiri di dekatnya (bukan mesin kepung). Tak bersenjata — jaga di belakang barisan.',
+  },
   spear: {
     name: 'Prajurit Tombak', cls: 'infantry', era: 0, cost: { food: 40, wood: 25 }, time: 15, pop: 1,
     hp: 55, atk: 5, armor: 0, range: 0.5, cooldown: 1.2, speed: 2.3, sight: 5, radius: 0.28,
@@ -173,8 +181,8 @@ BF.UNITS = {
 BF.BUILDINGS = {
   townhall: {
     name: 'Balai Kota', size: 3, era: 0, cost: { wood: 250, stone: 150 }, time: 90, hp: 2400, pop: 5, sight: 8,
-    dropoff: true, trains: ['worker'], atk: 6, range: 6, cooldown: 2, garrison: 10,
-    desc: 'Pusat permukiman. Melatih Pekerja, menerima setoran, dan meneliti era baru.',
+    dropoff: true, trains: ['worker', 'healer'], atk: 6, range: 6, cooldown: 2, garrison: 10,
+    desc: 'Pusat permukiman. Melatih Pekerja dan Tabib, menerima setoran, dan meneliti era baru.',
   },
   house: {
     name: 'Rumah', size: 2, era: 0, cost: { wood: 30 }, time: 18, hp: 500, pop: 5, sight: 3,

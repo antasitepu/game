@@ -518,6 +518,48 @@
     } else if (travel(s, u, o, BF.bRect(t, 1), d.speed) === 2) o.done = true;
   }
 
+  // ---------------------------------------------------------------- menyembuhkan (Tabib)
+
+  // Unit sendiri yang paling parah lukanya (nyawa ÷ nyawa penuh terkecil), selain mesin kepung dan si tabib sendiri.
+  // near: hanya yang terjangkau dari tempat berdiri (sikap Bertahan); kalau tidak, dalam jarak pandang.
+  function wounded(s, u, d, near) {
+    let best = null, bf = 1;
+    for (const t of s.units) {
+      if (t.owner !== u.owner || t.dead || t === u) continue;
+      const td = UD(s, t);
+      if (td.cls === 'siege' || t.hp >= td.hp) continue;
+      const gap = dist(t.x - u.x, t.y - u.y);
+      if (near ? gap - td.radius > d.healRange + d.radius : gap > d.sight) continue;
+      const f = t.hp / td.hp;
+      if (f < bf) { bf = f; best = t; }
+    }
+    return best;
+  }
+  BF.canHeal = (s, u, t) => !!UD(s, u).heal && !!t && t.kind === 'unit' && !t.dead && t !== u && t.owner === u.owner && UD(s, t).cls !== 'siege';
+
+  // o.hold: tidak mengejar sasaran yang keluar jangkauan (sikap Bertahan).
+  function updateHeal(s, u, d, o) {
+    const t = s.byId.get(o.tid);
+    if (!BF.canHeal(s, u, t)) { setIdle(u); return; }
+    const td = UD(s, t);
+    if (t.hp >= td.hp) { setIdle(u); return; }
+    if (dist(t.x - u.x, t.y - u.y) - td.radius <= d.healRange + d.radius) {
+      u.path = null;
+      o.planned = false;
+      u.dir = Math.atan2(t.y - u.y, t.x - u.x);
+      u.working = true;
+      t.hp = Math.min(td.hp, t.hp + d.heal * DT);
+      return;
+    }
+    if (o.hold) { setIdle(u); return; }
+    const ttx = t.x | 0, tty = t.y | 0;
+    if (o.planned && (o.gx !== ttx || o.gy !== tty) && u.repathT <= 0) o.planned = false;
+    if (!o.planned) { o.gx = ttx; o.gy = tty; }
+    if (travel(s, u, o, { x0: o.gx, y0: o.gy, x1: o.gx, y1: o.gy, range: 1 }, d.speed) === 2) {
+      if (o.partial) setIdle(u); else o.planned = false;       // tak terjangkau (terhalang) → lepas
+    }
+  }
+
   // ---------------------------------------------------------------- gather
 
   function nearestDropoff(s, u) {
@@ -937,6 +979,9 @@
         if (d.atk && u.stance !== 2 && (s.tick + u.id) % 8 === 0) {
           const t = acquire(s, u, d, u.stance === 1);
           if (t) u.order = { type: 'attack', tid: t.id, auto: true, hold: u.stance === 1, hx: u.x, hy: u.y };
+        } else if (d.heal && u.stance !== 2 && (s.tick + u.id) % 8 === 0) {
+          const t = wounded(s, u, d, u.stance === 1);
+          if (t) u.order = { type: 'heal', tid: t.id, auto: true, hold: u.stance === 1 };
         }
         break;
       case 'patrol':                                      // bolak-balik antara dua titik sambil menyerang musuh yang ditemui
@@ -972,6 +1017,7 @@
       case 'build': updateBuild(s, u, d, o); break;
       case 'repair': updateRepair(s, u, d, o); break;
       case 'garrison': updateGarrison(s, u, d, o); break;
+      case 'heal': updateHeal(s, u, d, o); break;
     }
   }
 

@@ -114,11 +114,12 @@
         desc: 'Lalu klik kiri pada peta: pasukan berjalan bolak-balik antara posisinya sekarang dan titik itu sambil menyerang musuh yang ditemui.',
         action() { ui.patrol = true; ui.amove = ui.garrison = false; ui.placing = null; },
       };
-      // sikap: tombol menyala bila semua unit tempur terpilih memakai sikap itu
-      const fighters = units.filter(u => p.U[u.type].atk), cur = fighters.length && fighters.every(u => (u.stance || 0) === (fighters[0].stance || 0)) ? fighters[0].stance || 0 : -1;
+      // sikap: tombol menyala bila semua unit tempur (dan Tabib) terpilih memakai sikap itu; bila yang terpilih hanya
+      // Tabib, keterangannya memakai arti sikap bagi penyembuh
+      const fighters = units.filter(u => p.U[u.type].atk || p.U[u.type].heal), medic = fighters.every(u => p.U[u.type].heal), cur = fighters.length && fighters.every(u => (u.stance || 0) === (fighters[0].stance || 0)) ? fighters[0].stance || 0 : -1;
       if (fighters.length) BF.STANCES.forEach((st, v) => {
         slots[8 + v] = {
-          glyph: ['➤', '◆', '○'][v], title: 'Sikap: ' + st.name, desc: st.desc, active: cur === v,
+          glyph: ['➤', '◆', '○'][v], title: 'Sikap: ' + st.name, desc: medic ? st.heal : st.desc, active: cur === v,
           action() { BF.issue({ c: 'stance', ids: fighters.map(u => u.id), v }); hud.infoAt = 0; },
         };
       });
@@ -273,6 +274,7 @@
       case 'attack': return 'Menyerang';
       case 'build': return 'Membangun';
       case 'repair': return 'Memperbaiki';
+      case 'heal': return 'Menyembuhkan';
       case 'patrol': return 'Berpatroli';
       case 'garrison': return 'Menuju tempat berlindung';
       case 'gather': return o.state === 'return' ? 'Menyetor ' + BF.RES_LABEL[o.res] : o.animal ? (o.state === 'work' ? 'Menguliti buruan' : 'Berburu') : 'Mengumpulkan ' + BF.RES_LABEL[o.res];
@@ -287,7 +289,8 @@
   }
 
   const num = v => (Math.round(v * 10) / 10).toString();
-  const combatHtml = d => `<div class="stats"><span>Serang <b>${num(d.atk)}</b></span><span>Jarak <b>${d.range > 1 ? num(d.range) : 'dekat'}</b></span>` +
+  const combatHtml = d => '<div class="stats">' + (d.heal ? `<span>Pulih <b>${num(d.heal)}</b>/dtk</span><span>Jangkauan <b>${num(d.healRange)}</b></span>`
+    : `<span>Serang <b>${num(d.atk)}</b></span><span>Jarak <b>${d.range > 1 ? num(d.range) : 'dekat'}</b></span>`) +
     (d.armor !== undefined ? `<span>Zirah <b>${num(d.armor)}</b></span>` : '') + (d.speed ? `<span>Laju <b>${num(d.speed)}</b></span>` : '') + '</div>';
 
   function renderInfo(s) {
@@ -315,7 +318,7 @@
         html = head(d.name) + hpHtml(e.hp, d.hp) + combatHtml(d) +
           (e.owner === me ? `<div class="status">${statusOf(e)}` +
             (e.carry > 0 ? ` · membawa ${e.carry} ${BF.RES_LABEL[e.carryType]}` : '') +
-            (d.atk ? ' · Sikap: ' + BF.STANCES[e.stance || 0].name : '') + '</div>' : '');
+            (d.atk || d.heal ? ' · Sikap: ' + BF.STANCES[e.stance || 0].name : '') + '</div>' : '');
       } else {
         const d = BF.bldDef(s, e);
         pk = 'building:' + e.type + ':' + e.owner;

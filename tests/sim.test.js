@@ -682,5 +682,106 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   }
 }
 
+// 16. Tabib (penyembuh): dilatih di Balai Kota mulai Era Baja, memulihkan unit sendiri, sikap, perintah, AI
+{
+  const mk = () => { const s = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }); s.animals.length = 0; for (const p of s.players) { p.era = 1; p.popCap = 60; } return s; };
+  const base = s => { const th = s.buildings.find(b => b.owner === 0 && b.type === 'townhall'); return { th, x: th.tx + 1.5, y: th.ty + 6.5 }; };
+  const put = (s, type, owner, x, y, hp) => { const f = BF.findFreeNear(s.map, Math.round(x), Math.round(y), 4, owner), u = BF.spawnUnit(s, type, owner, f.x + 0.5, f.y + 0.5); if (hp !== undefined) u.hp = hp; return u; };
+
+  {
+    const s = mk(), { th } = base(s), p = s.players[0];
+    p.era = 0; p.res.food = p.res.gold = 500;
+    BF.exec(s, 0, { c: 'train', bid: th.id, unit: 'healer' });
+    const early = th.queue.length;
+    p.era = 1;
+    BF.exec(s, 0, { c: 'train', bid: th.id, unit: 'healer' });
+    check('Tabib dilatih di Balai Kota mulai Era Baja, biaya dipotong', early === 0 && th.queue.length === 1 && p.res.food === 500 - BF.UNITS.healer.cost.food && p.res.gold === 500 - BF.UNITS.healer.cost.gold, { early, antre: th.queue.length });
+    run(s, 20 * (BF.UNITS.healer.time + 2));
+    const h = s.units.find(u => u.owner === 0 && u.type === 'healer');
+    check('Tabib selesai dilatih: tak bersenjata, bisa berlindung', !!h && BF.unitDef(s, h).atk === 0 && BF.unitDef(s, h).heal > 0 && BF.canGarrison(s, h, th));
+  }
+  {
+    // menyembuhkan sendiri unit terluka di dekatnya dengan laju BF.UNITS.healer.heal nyawa/detik, berhenti saat penuh
+    const s = mk(), { x, y } = base(s), h = put(s, 'healer', 0, x, y), sp = put(s, 'spear', 0, x + 1.5, y, 20), full = BF.unitDef(s, sp).hp;
+    run(s, 20 * 3);
+    const gain = sp.hp - 20, rate = BF.UNITS.healer.heal;
+    check('Tabib menganggur memulihkan unit terluka (laju sesuai definisi)', gain > rate * 2.3 && gain <= rate * 3.01 && h.order.type === 'heal' && h.working === true, { gain: +gain.toFixed(1), lajuPerDetik: rate });
+    run(s, 20 * 14);
+    check('berhenti saat nyawa penuh (tidak melebihi)', sp.hp === full && h.order.type === 'idle' && !h.working, { hp: sp.hp });
+  }
+  {
+    // yang tidak disembuhkan: musuh, mesin kepung, dirinya sendiri; tabib lain disembuhkan
+    const s = mk(), { x, y } = base(s), h = put(s, 'healer', 0, x, y, 10), foe = put(s, 'spear', 1, x + 1.5, y, 20), cat = put(s, 'catapult', 0, x, y + 1.5, 30);
+    foe.stance = 2;
+    run(s, 20 * 3);
+    check('musuh, mesin kepung, dan dirinya sendiri tidak disembuhkan', foe.hp <= 20 && cat.hp === 30 && h.hp === 10 && h.order.type === 'idle');
+    const h2 = put(s, 'healer', 0, x - 1.5, y);
+    run(s, 20 * 2);
+    check('Tabib menyembuhkan Tabib lain', h.hp > 15 && h2.order.type === 'heal');
+  }
+  {
+    const s = mk(), { x, y } = base(s), h = put(s, 'healer', 0, x, y), a = put(s, 'spear', 0, x + 1.5, y, 40), b = put(s, 'sword', 0, x - 1.5, y, 12);
+    run(s, 10);
+    check('mendahulukan yang paling parah lukanya', h.order.type === 'heal' && h.order.tid === b.id, { tid: h.order.tid, a: a.id, b: b.id });
+  }
+  {
+    // sikap: Agresif mendatangi yang terluka dalam jarak pandang; Bertahan hanya yang terjangkau; Diam hanya atas perintah
+    const far = st => { const s = mk(), { x, y } = base(s), h = put(s, 'healer', 0, x, y), sp = put(s, 'spear', 0, x + 5, y, 20); h.stance = st; const x0 = h.x, y0 = h.y; run(s, 20 * 6); return { s, h, sp, moved: BF.dist(h.x - x0, h.y - y0) }; };
+    const ag = far(0), df = far(1), dm = far(2);
+    check('Agresif: mendatangi unit terluka di luar jangkauan, lalu menyembuhkan', ag.moved > 1.5 && ag.sp.hp > 25, { geser: +ag.moved.toFixed(1), hp: +ag.sp.hp.toFixed(1) });
+    check('Bertahan: tidak beranjak untuk yang di luar jangkauan', df.moved < 0.3 && df.sp.hp === 20, { geser: +df.moved.toFixed(1) });
+    check('Diam: tidak menyembuhkan tanpa perintah', dm.moved < 0.3 && dm.sp.hp === 20 && dm.h.order.type === 'idle');
+    BF.exec(dm.s, 0, { c: 'heal', ids: [dm.h.id], tid: dm.sp.id });
+    run(dm.s, 20 * 6);
+    check('perintah menyembuhkan: Tabib mengikuti sasaran sampai terjangkau', dm.sp.hp > 25 && dm.h.order.type === 'heal', { hp: +dm.sp.hp.toFixed(1) });
+  }
+  {
+    // validasi perintah
+    const s = mk(), { x, y } = base(s), h = put(s, 'healer', 0, x, y), sp = put(s, 'spear', 0, x + 5, y, 20), foe = put(s, 'spear', 1, x, y + 5, 20), cat = put(s, 'catapult', 0, x - 4, y, 30);
+    h.stance = 2; foe.stance = 2;
+    BF.exec(s, 1, { c: 'heal', ids: [h.id], tid: sp.id });
+    const a = h.order.type;
+    BF.exec(s, 0, { c: 'heal', ids: [h.id], tid: foe.id });
+    const b = h.order.type;
+    BF.exec(s, 0, { c: 'heal', ids: [h.id], tid: cat.id });
+    BF.exec(s, 0, { c: 'heal', ids: [h.id], tid: h.id });
+    BF.exec(s, 0, { c: 'heal', ids: [h.id], tid: 999999 });
+    BF.exec(s, 0, { c: 'heal', ids: [h.id] });
+    const c2 = h.order.type;
+    BF.exec(s, 0, { c: 'heal', ids: [sp.id], tid: h.id });
+    check('perintah menyembuhkan tervalidasi (lawan, musuh, mesin kepung, diri sendiri, id rusak, bukan Tabib)', a === 'idle' && b === 'idle' && c2 === 'idle' && sp.order.type === 'idle');
+    BF.exec(s, 0, { c: 'heal', ids: [h.id], tid: sp.id });
+    run(s, 20 * 4);
+    const json = JSON.stringify(BF.serialize(s)), s2 = BF.deserialize(JSON.parse(json));
+    let same = BF.hash(s) === BF.hash(s2);
+    for (let i = 0; i < 20 * 6 && same; i++) { BF.step(s); BF.step(s2); s.events.length = s2.events.length = 0; same = BF.hash(s) === BF.hash(s2); }
+    check('menyembuhkan ikut tersimpan (lanjut setelah muat identik)', same && sp.hp > 25, { hp: +sp.hp.toFixed(1) });
+    // sasaran berlindung → Tabib berhenti
+    const th = s.buildings.find(q => q.owner === 0 && q.type === 'townhall');
+    sp.hp = 10;
+    BF.exec(s, 0, { c: 'heal', ids: [h.id], tid: sp.id });
+    BF.exec(s, 0, { c: 'garrison', ids: [sp.id], bid: th.id });
+    run(s, 20 * 20);
+    check('sasaran masuk berlindung → Tabib berhenti mengikuti', th.inside.indexOf(sp) >= 0 && h.order.type === 'idle');
+  }
+  {
+    // AI: melatih Tabib bila pasukan cukup besar; Tabib tidak ikut menyerbu sasaran, melainkan mengikuti pasukan
+    const mkAI = diff => { const s = BF.newGame({ seed: 4202, ai: [false, true], difficulty: diff, factions: ['padang', 'bara'] }); s.animals.length = 0; const q = s.players[1]; q.era = 1; q.popCap = 70; q.res = { food: 2000, wood: 2000, gold: 2000, stone: 2000 }; return s; };
+    const ring = (s, cx, cy, type, n) => { const out = []; for (let i = 0; i < n; i++) out.push(put(s, type, 1, cx + (i % 4) - 1.5, cy + ((i / 4) | 0))); return out; };
+    const trains = diff => { const s = mkAI(diff), th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall'); ring(s, th.tx + 1, th.ty + 6, 'spear', 9); run(s, 20 * 40); return s.units.filter(u => u.owner === 1 && u.type === 'healer').length + th.queue.filter(q => q.unit === 'healer').length; };
+    const n1 = trains('normal'), n0 = trains('easy');
+    check('AI Sedang melatih Tabib untuk pasukannya; AI Mudah tidak', n1 >= 1 && n1 <= 2 && n0 === 0, { sedang: n1, mudah: n0 });
+    const s = mkAI('normal'), q = s.players[1], th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall');
+    const army = ring(s, th.tx + 1, th.ty + 6, 'spear', 8), med = put(s, 'healer', 1, th.tx + 1, th.ty + 9);
+    q.ai = { state: 'attack', waveSize: 8, sent: 8, target: 0, rebalT: 0, dirX: 0, dirY: 0 };
+    run(s, BF.DIFF.normal.think + 2);
+    const tgt = s.byId.get(q.ai.target), tx = tgt.tx + tgt.size / 2, ty = tgt.ty + tgt.size / 2;
+    check('AI menyerang: Tabib tidak dihitung sebagai pasukan & tidak disuruh ke sasaran', army.every(u => u.order.type === 'amove') && q.ai.sent === 8 && (med.order.type === 'idle' || (med.order.type === 'move' && BF.dist(med.order.x - tx, med.order.y - ty) > 12)), { tabib: med.order.type });
+    army[0].hp = 10;
+    run(s, 20 * 12);
+    check('Tabib AI mengikuti pasukan dan memulihkan yang terluka di jalan', army[0].hp > 14 || BF.dist(med.x - army[0].x, med.y - army[0].y) < 8, { hp: +army[0].hp.toFixed(1), jarak: +BF.dist(med.x - army[0].x, med.y - army[0].y).toFixed(1) });
+  }
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

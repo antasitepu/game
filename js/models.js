@@ -1229,6 +1229,9 @@
     const body = o => humanBody(r, Object.assign({ top: team, pants, hair: HAIR, sleeve: 'long' }, o), oy, oz, !cav);
     const HY = HU.HEAD + oy;
     switch (type) {
+      case 'healer':                                      // cadangan bila model aset `tabib` tidak termuat: jubah polos warna tim
+        body({});
+        break;
       case 'worker':
         body({ sleeve: 'short', hair: null });
         r.on('head', [1, 0], m => m.geom('flat', new THREE.ConeGeometry(0.14, 0.08, 18), mT(0, HY + 0.082, 0), C('#c9a85c'), [0.8, 1.1]));                          // caping
@@ -1467,6 +1470,7 @@
     berserk: { model: 'pengamuk', strike: 'serang', at: 0.29 },      // dua hantaman beruntun: kapak kanan 0,29 s, kiri 0,46 s
     rider: { model: 'penunggang', strike: 'serang', at: 0.35, feet: HOOVES, sphere: MOUNTED },         // kuda + penunggang satu kerangka
     harcher: { model: 'pemanah_kuda', strike: 'serang', at: 0.58, feet: HOOVES, sphere: MOUNTED },
+    healer: { model: 'tabib' },                                      // tanpa klip serang; klip `kerja` (berulang) = menyembuhkan
   };
   const kits = {};
   function rigKit(type) {

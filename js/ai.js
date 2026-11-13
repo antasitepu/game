@@ -171,9 +171,10 @@
   }
 
   // hiding: pekerja yang sedang berjalan untuk berlindung; hidden: pekerja yang sudah di dalam bangunan. Keduanya tidak
-  // masuk c.workers (jangan diberi tugas lain) tetapi tetap dihitung sebagai pekerja yang dimiliki.
+  // masuk c.workers (jangan diberi tugas lain) tetapi tetap dihitung sebagai pekerja yang dimiliki. medics: para Tabib —
+  // bukan bagian c.army (tidak dihitung sebagai kekuatan tempur dan tidak disuruh menyerbu), mereka mengikuti pasukan.
   function census(s, p) {
-    const c = { workers: [], army: [], idle: [], cnt: { food: 0, wood: 0, gold: 0, stone: 0 }, own: {}, pending: [], types: {}, hiding: 0, hidden: 0 };
+    const c = { workers: [], army: [], medics: [], idle: [], cnt: { food: 0, wood: 0, gold: 0, stone: 0 }, own: {}, pending: [], types: {}, hiding: 0, hidden: 0 };
     for (const u of s.units) {
       if (u.owner !== p.id || u.dead) continue;
       if (u.type === 'worker' && u.order.type === 'garrison') c.hiding++;
@@ -181,7 +182,8 @@
         c.workers.push(u);
         if (u.order.type === 'idle') c.idle.push(u);
         else if (u.order.type === 'gather') c.cnt[u.order.res]++;
-      } else {
+      } else if (p.U[u.type].heal) c.medics.push(u);
+      else {
         c.army.push(u);
         c.types[u.type] = (c.types[u.type] || 0) + 1;
       }
@@ -273,6 +275,11 @@
       else if (p.era >= 2 && !has('workshop')) front('workshop', 9);
       else if (p.era >= 1 && has('barracks') < 2 && p.res.wood > 450) front('barracks', 9);
     }
+    // Tabib (smart ≥ 1, mulai eranya): satu per delapan prajurit, paling banyak sebanyak nilai smart (Sedang 1, Sulit 2),
+    // dan hanya bila emas masih tersisa untuk pasukan — Tabib tidak boleh menguras kas perang.
+    const th = (c.own.townhall || []).find(b => b.built), hd = p.U.healer;
+    if (diff.smart && th && p.era >= hd.era && th.queue.length < 3 && c.medics.length + (c.types.healer || 0) < Math.min(diff.smart, Math.floor(c.army.length / 8)) &&
+      p.res.gold >= (hd.cost.gold || 0) + 100 && BF.canAfford(p, hd.cost) && spendOK(hd.cost)) BF.cmd.train(s, th, 'healer');
     let size = c.army.length;
     for (const t in c.own) for (const b of c.own[t]) for (const q of b.queue) if (q.unit && q.unit !== 'worker') size++;
     if (size >= diff.maxArmy && !underAttack) return;
@@ -296,6 +303,12 @@
 
   function warfare(s, p, ai, c, diff, underAttack) {
     const army = c.army, rx = c.hx + ai.dirX * 7, ry = c.hy + ai.dirY * 7;
+    // Tabib yang menganggur (tidak sedang menyembuhkan): di markas menunggu di titik kumpul, saat menyerang mengikuti pasukan
+    const medics = c.medics.filter(u => u.order.type === 'idle');
+    if (ai.state === 'build') {
+      const far = medics.filter(u => dist(u.x - rx, u.y - ry) > 6);
+      if (far.length) BF.cmd.move(s, far, rx, ry);
+    }
     if (ai.state === 'build') {
       // Baru saja mundur (20 detik terakhir): jangan berbalik menyerbu tempat terakhir kena pukul, kecuali markas sendiri diserang.
       const defend = underAttack && (s.tick - (ai.retreatT || -1e9) > 400 || dist(p.lastHitX - c.hx, p.lastHitY - c.hy) < 16);
@@ -318,6 +331,7 @@
       ai.flank = null;
       ai.waveSize = Math.min(diff.maxWave, grow + diff.waveGrow);
       if (army.length) BF.cmd.move(s, army, rx, ry);
+      if (c.medics.length) BF.cmd.move(s, c.medics, rx, ry);
     };
     if (army.length <= Math.max(1, Math.floor(ai.sent * 0.25))) { ai.retreats = 0; stand(ai.waveSize); return; }
     ai.sent = Math.max(ai.sent, army.length);
@@ -333,6 +347,11 @@
     let mx = 0, my = 0;
     for (const u of body) { mx += u.x; my += u.y; }
     mx /= body.length; my /= body.length;
+    {
+      // dua tile di belakang titik tengah pasukan (ke arah markas sendiri)
+      const hx = c.hx - mx, hy = c.hy - my, l = dist(hx, hy) || 1, far = medics.filter(u => dist(u.x - mx, u.y - my) > 4);
+      if (far.length) BF.cmd.move(s, far, mx + hx / l * 2, my + hy / l * 2);
+    }
 
     // Mundur bila kalah jumlah (smart ≥ 1): tiap 3 detik bandingkan nilai pasukan di sekitar barisan dengan nilai pasukan
     // dan bangunan bersenjata musuh di dekatnya. Paling banyak dua kali berturut-turut, dan tidak saat pasukan sudah
