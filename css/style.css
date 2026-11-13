@@ -185,10 +185,36 @@ p { margin: 0 0 6px; color: #d8cfb6; }
 table { border-collapse: collapse; width: 100%; }
 td { padding: 4px 8px 4px 0; vertical-align: top; color: #d8cfb6; border-bottom: 1px solid rgba(255, 255, 255, .06); }
 td:first-child { color: #f4dfa0; font-weight: 600; white-space: nowrap; }
-.stats-end { display: grid; gap: 6px; margin-bottom: 18px; color: #b9ad90; }
-.stats-end span { display: flex; justify-content: space-between; padding-bottom: 5px; border-bottom: 1px solid rgba(255, 255, 255, .07); }
-.stats-end b { color: #ece5d2; }
+/* layar akhir: tabel statistik dua pemain + grafik skor */
+.card.end { width: min(1000px, 100%); }
+.card.end .tagline { margin-bottom: 14px; }
+.stats-end { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; margin-bottom: 16px; text-align: left; color: #b9ad90; }
+.end-time { margin-bottom: 8px; }
+.end-time b { color: #ece5d2; }
+.end-table th { padding: 4px 0 6px 12px; font-weight: 600; text-align: right; color: #ece5d2; border-bottom: 1px solid #7d6642; white-space: nowrap; }
+.end-table th:first-child { padding-left: 0; }
+.end-table th small { display: block; font-weight: 400; color: #b9ad90; }
+.end-table th i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; }
+.end-table td { padding: 4px 0 4px 12px; text-align: right; color: #ece5d2; font-variant-numeric: tabular-nums; }
+.end-table td:first-child { padding-left: 0; text-align: left; font-weight: 400; color: #b9ad90; }
+.end-table tr.total td { font-weight: 700; color: #ece5d2; }
+.end-table tr.sub td:first-child { padding-left: 14px; }
+.end-note { margin-top: 10px; font-size: 12px; line-height: 1.45; }
+.end-chart { position: relative; padding: 10px 12px 6px; background: #1c150e; border: 1px solid #4a3b26; border-radius: 8px; }
+.ec-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+.ec-title { font-weight: 600; color: #ece5d2; }
+.ec-legend { display: flex; gap: 14px; color: #b9ad90; font-size: 12px; }
+.ec-legend i, .ec-tip i { display: inline-block; width: 14px; height: 2px; margin-right: 6px; vertical-align: middle; border-radius: 1px; }
+.end-chart svg { display: block; width: 100%; height: auto; }
+.end-chart svg text { font-size: 11px; fill: #b9ad90; font-variant-numeric: tabular-nums; }
+.end-chart svg text.val { fill: #ece5d2; font-weight: 600; }
+.ec-tip { position: absolute; z-index: 2; min-width: 120px; padding: 6px 9px; pointer-events: none; font-size: 12px; color: #b9ad90; background: rgba(22, 17, 11, .97); border: 1px solid #7d6642; border-radius: 6px; white-space: nowrap; }
+.ec-tip b { margin-right: 6px; color: #ece5d2; }
+.ec-tip div:first-child { margin-bottom: 3px; }
 
+@media (max-width: 900px) {
+  .stats-end { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 760px) {
   .cols { grid-template-columns: 1fr; gap: 0; }
   .factions { grid-template-columns: repeat(2, 1fr); }

@@ -64,6 +64,15 @@
     }
   }
 
+  // Statistik per pemain untuk layar akhir (p.stat). got: sumber daya disetor per jenis; killVal: nilai musuh yang dikalahkan.
+  BF.newStat = () => ({ got: { food: 0, wood: 0, gold: 0, stone: 0 }, trained: 0, built: 0, killU: 0, razed: 0, killVal: 0, lostU: 0, lostB: 0, trades: 0 });
+
+  // Skor pemain p saat ini: { eco, mil, tek, total } (rumus di BF.SCORE).
+  BF.score = function (p) {
+    const S = BF.SCORE, eco = Math.round(p.gathered / S.eco), mil = Math.round(p.stat.killVal / S.mil), tek = p.era * S.era + p.techs.length * S.tech;
+    return { eco, mil, tek, total: eco + mil + tek };
+  };
+
   // Bangun ulang p.U / p.B / p.mod dari data dasar + efek wangsa + teknologi yang sudah diteliti.
   BF.rebuildDefs = function (p) {
     const clone = defs => {
@@ -104,6 +113,7 @@
       difficulty: opts.difficulty || 'normal', mp: !!opts.mp,
       fog: { explored: new Uint8Array(N * N), visible: new Uint8Array(N * N), version: 0 },
       market: Object.assign({}, BF.MARKET.base),
+      hist: [],                                            // riwayat skor: [skor pemain 0, skor pemain 1] tiap BF.SCORE.every tick
     };
     const ai = opts.ai || [false, true], fkeys = Object.keys(BF.FACTIONS);
     for (let i = 0; i < 2; i++) {
@@ -112,7 +122,7 @@
         id: i, faction, name: BF.FACTIONS[faction].name, color: slot.color, dark: slot.dark, light: slot.light,
         res: Object.assign({}, BF.START_RES), era: 0, eraQueued: false, techs: [], techQ: {}, pop: 0, popCap: 0,
         isAI: !!ai[i], ai: null, alertTick: -9999, alertX: 0, alertY: 0, lastHitTick: -9999, lastHitX: 0, lastHitY: 0,
-        kills: 0, losses: 0, gathered: 0,
+        kills: 0, losses: 0, gathered: 0, stat: BF.newStat(),
       };
       BF.rebuildDefs(p);
       s.players.push(p);
@@ -171,13 +181,14 @@
     return b;
   };
 
-  BF.kill = function (s, t) {
+  // own: dihancurkan pemiliknya sendiri (perintah hancurkan, gerbang menggantikan tembok) → bukan kehilangan.
+  BF.kill = function (s, t, own) {
     if (t.dead) return;
     t.dead = true;
     s.hasDead = true;
     s.byId.delete(t.id);
     const p = s.players[t.owner];
-    p.losses++;
+    if (!own) { p.losses++; p.stat[t.kind === 'unit' ? 'lostU' : 'lostB']++; }
     if (t.kind === 'unit') {
       p.pop -= p.U[t.type].pop;
       const cls = p.U[t.type].cls;
@@ -245,6 +256,7 @@
       p.res.gold += q;
       s.market[res] = Math.max(M.min, s.market[res] * (1 - M.step));
     }
+    p.stat.trades++;
     return true;
   };
 
@@ -353,8 +365,14 @@
       s.events.push({ type: 'attacked', owner: t.owner, x, y });
     }
     if (t.hp <= 0) {
+      const d = t.kind === 'unit' ? UD(s, t) : BD(s, t), c = d.cost, built = t.kind === 'unit' || t.built ? 1 : t.progress;
       BF.kill(s, t);
-      if (src && src.kind !== 'animal') s.players[src.owner].kills++;
+      if (src && src.kind !== 'animal') {
+        const k = s.players[src.owner];
+        k.kills++;
+        k.stat[t.kind === 'unit' ? 'killU' : 'razed']++;
+        k.stat.killVal += ((c.food || 0) + (c.wood || 0) + (c.gold || 0) + (c.stone || 0)) * built;
+      }
       return;
     }
     if (t.kind === 'unit' && src && !src.dead && src.owner !== t.owner && UD(s, t).atk && t.stance !== 2) {
@@ -588,6 +606,7 @@
         if (BF.distToBuilding(b, u.x, u.y) < 1.6) {
           p.res[u.carryType] += u.carry;
           p.gathered += u.carry;
+          p.stat.got[u.carryType] += u.carry;
           u.carry = 0;
           if (o.last) setIdle(u);
           else { o.state = 'go'; o.planned = false; o.drop = 0; }
@@ -749,6 +768,7 @@
     b.progress = 1;
     b.hp = Math.min(d.hp, Math.ceil(b.hp));
     s.players[b.owner].popCap += d.pop || 0;
+    s.players[b.owner].stat.built++;
     s.events.push({ type: 'built', owner: b.owner, building: b.type, x: b.tx + b.size / 2, y: b.ty + b.size / 2 });
   }
 
@@ -836,7 +856,7 @@
 
   function enter(s, u, b) {
     const p = s.players[u.owner];
-    if (u.carry > 0 && BF.BUILDINGS[b.type].dropoff) { p.res[u.carryType] += u.carry; p.gathered += u.carry; u.carry = 0; }
+    if (u.carry > 0 && BF.BUILDINGS[b.type].dropoff) { p.res[u.carryType] += u.carry; p.gathered += u.carry; p.stat.got[u.carryType] += u.carry; u.carry = 0; }
     u.order = { type: 'idle' };
     u.path = null;
     u.moving = u.working = false;
@@ -989,6 +1009,7 @@
       if (type === 'worker' && r.node && s.map.node[idx(r.nx, r.ny)] === r.node) u.order = BF.gatherOrder(s.map, r.nx, r.ny);
       else u.order = BF.moveOrder(s, r.x, r.y, false, b.owner);
     }
+    s.players[b.owner].stat.trained++;
     s.events.push({ type: 'trained', owner: b.owner, unit: type, x: u.x, y: u.y });
     return u;
   }
@@ -1109,6 +1130,7 @@
       s.hasDead = false;
     }
     if (s.events.length > 400) s.events.splice(0, s.events.length - 400);
+    if (s.tick % BF.SCORE.every === 0) s.hist.push(s.players.map(p => BF.score(p).total));
     if (s.tick % 200 === 0) for (const r in s.market) s.market[r] += (BF.MARKET.base[r] - s.market[r]) * BF.MARKET.drift;
     if (s.tick % 5 === 0) BF.updateFog(s);
     if (s.tick % 20 === 0) checkVictory(s);

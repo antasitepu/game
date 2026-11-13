@@ -442,5 +442,33 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('AI Mudah tidak membangun Pasar', !m.market && m.harga === 100, m);
 }
 
+// 13. Statistik & skor untuk layar akhir
+{
+  const s = BF.newGame({ seed: 4202, ai: [true, true], difficulty: 'normal', factions: ['padang', 'bara'] });
+  run(s, 20 * 60 * 12);
+  const [p, q] = s.players, sum = o => Object.values(o).reduce((a, b) => a + b, 0), sc = BF.score(p);
+  check('sumber daya terkumpul tercatat per jenis (jumlahnya = total)', sum(p.stat.got) === p.gathered && p.stat.got.food > 0 && p.stat.got.wood > 0, p.stat.got);
+  check('unit dilatih & bangunan didirikan tercatat', p.stat.trained >= 8 && p.stat.built >= 3 && q.stat.trained >= 8, { dilatih: p.stat.trained, didirikan: p.stat.built });
+  check('skor = ekonomi + militer + teknologi menurut BF.SCORE', sc.total === sc.eco + sc.mil + sc.tek && sc.eco === Math.round(p.gathered / 10) && sc.tek === p.era * 150 + p.techs.length * 40 && sc.mil === Math.round(p.stat.killVal / 5), sc);
+  check('riwayat skor: satu sampel per 30 detik, tidak pernah turun', s.hist.length === 24 && s.hist.every((r, i) => r.length === 2 && (!i || (r[0] >= s.hist[i - 1][0] && r[1] >= s.hist[i - 1][1]))), { sampel: s.hist.length, akhir: s.hist[s.hist.length - 1] });
+  const d = JSON.parse(JSON.stringify(BF.serialize(s))), s2 = BF.deserialize(d);
+  check('statistik & riwayat ikut tersimpan', JSON.stringify(s2.players[0].stat) === JSON.stringify(p.stat) && s2.hist.length === s.hist.length && BF.score(s2.players[1]).total === BF.score(q).total);
+  for (const pl of d.players) delete pl.stat;
+  delete d.hist;
+  const s3 = BF.deserialize(d);
+  check('simpanan lama (tanpa statistik) tetap bisa dimuat & dilanjutkan', s3.hist.length === 0 && s3.players[0].stat.trained === 0 && BF.score(s3.players[0]).eco === sc.eco && (run(s3, 20 * 40), s3.hist.length === 1));
+
+  // pertempuran: nilai musuh yang dikalahkan, kehilangan, dan penghancuran oleh pemilik sendiri
+  const t = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }), a = t.players[0], b = t.players[1];
+  t.animals.length = 0;
+  const th = t.buildings.find(x => x.owner === 0 && x.type === 'townhall'), f = BF.findFreeNear(t.map, th.tx + 5, th.ty + 5, 6, 0);
+  const me = BF.spawnUnit(t, 'sword', 0, f.x + 0.5, f.y + 0.5), foe = BF.spawnUnit(t, 'worker', 1, f.x + 1.5, f.y + 0.5);
+  BF.exec(t, 0, { c: 'attack', ids: [me.id], tid: foe.id });
+  run(t, 20 * 15);
+  check('mengalahkan unit musuh: tercatat di kedua pihak, militer = nilai ÷ 5', foe.dead && a.stat.killU === 1 && a.stat.killVal === 50 && BF.score(a).mil === 10 && b.stat.lostU === 1 && a.kills === 1 && b.losses === 1, { killVal: a.stat.killVal, mil: BF.score(a).mil });
+  BF.exec(t, 0, { c: 'destroy', ids: [me.id] });
+  check('menghancurkan milik sendiri bukan kehilangan', me.dead && a.stat.lostU === 0 && a.losses === 0);
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

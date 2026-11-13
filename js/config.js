@@ -35,6 +35,9 @@ BF.ANIMALS = {
 // Perbaikan bangunan oleh pekerja: tiap pekerja memulihkan nyawa secepat rate × laju membangun bangunan itu, dan
 // memulihkan nyawa dari nol sampai penuh menghabiskan cost × biaya bangunannya (ditagih sedikit demi sedikit).
 BF.REPAIR = { rate: 0.75, cost: 0.5 };
+// Skor: ekonomi = sumber daya terkumpul ÷ eco; militer = nilai (biaya) unit & bangunan musuh yang dikalahkan ÷ mil;
+// teknologi = era × era + teknologi × tech. Riwayat skor dicatat tiap `every` tick untuk grafik di layar akhir.
+BF.SCORE = { eco: 10, mil: 5, era: 150, tech: 40, every: 600 };
 // Sikap unit tempur saat tidak diperintah (u.stance = indeks): agresif mengejar musuh yang terlihat lalu kembali;
 // bertahan hanya menyerang yang masuk jangkauannya tanpa beranjak; diam tidak menyerang sama sekali, juga saat diserang.
 BF.STANCES = [

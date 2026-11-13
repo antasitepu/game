@@ -71,6 +71,17 @@ module.exports = async ({ page, check }) => {
   await p.ev(`(() => { const s = BF.game.s; s.players[0].isAI = true; for (let i = 0; i < 20 * 60 * 90 && !s.over; i++) BF.step(s); })()`);
   await p.sleep(500);
   check('permainan berakhir & layar akhir tampil', await p.ev(`BF.game.s.over`) && !(await hidden('overlay-end')), await p.ev(`({ winner: BF.game.s.winner, menit: Math.round(BF.game.s.tick / 1200), teknologi: BF.game.s.players.map(q => q.techs.length) })`));
+  // layar akhir: tabel statistik dua pemain + grafik skor, cocok dengan state; tombol Main Lagi terlihat tanpa menggulir
+  check('layar akhir: tabel statistik cocok dengan state', await p.ev(`(() => { const s = BF.game.s, me = s.players[0], foe = s.players[1], rows = [...document.querySelectorAll('.end-table tr')].map(tr => [...tr.children].map(c => c.textContent));
+    const row = name => rows.find(r => r[0] === name), n = v => v.toLocaleString('id-ID');
+    return rows.length === 14 && rows[0][1].startsWith('Kamu') && rows[0][2].startsWith('Lawan') && row('Skor')[1] === n(BF.score(me).total) && row('Skor')[2] === n(BF.score(foe).total)
+      && row('Unit dilatih')[1] === String(me.stat.trained) && row('Bangunan dirobohkan')[2] === String(foe.stat.razed) && row('Era tercapai')[1] === BF.ERAS[me.era].name; })()`), await p.ev(`[...document.querySelectorAll('.end-table tr')].slice(1, 5).map(tr => tr.textContent).join(' | ')`));
+  check('layar akhir: grafik skor dua garis + legenda, tombol Main Lagi terlihat', await p.ev(`(() => { const c = document.querySelector('.end-chart'), b = document.getElementById('btn-again').getBoundingClientRect();
+    return c.querySelectorAll('svg path').length === 2 && c.querySelector('.ec-legend').textContent === 'KamuLawan' && BF.game.s.hist.length >= 4 && b.bottom <= window.innerHeight && b.top > 0; })()`));
+  const cp = await p.ev(`(() => { const r = document.querySelector('.end-chart svg').getBoundingClientRect(); return { x: r.left + r.width * 0.5, y: r.top + r.height * 0.5 }; })()`);
+  await p.mouse('mouseMoved', cp.x, cp.y);
+  await p.sleep(200);
+  check('kursor di grafik → tooltip skor kedua pemain di menit itu', await p.ev(`(() => { const t = document.querySelector('.ec-tip'); return !t.classList.contains('hidden') && /^Menit \\d+:\\d\\d/.test(t.textContent) && t.textContent.includes('Kamu') && t.textContent.includes('Lawan'); })()`), await p.ev(`document.querySelector('.ec-tip').textContent`));
   await p.shot('23-akhir');
   await p.clickEl('#btn-again');
   await p.sleep(200);

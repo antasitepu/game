@@ -23,7 +23,7 @@
     const m = s.map;
     return {
       v: BF.SAVE_VERSION, seed: s.seed, tick: s.tick, nextId: s.nextId, rng: s.rng,
-      human: s.human, difficulty: s.difficulty, over: s.over, winner: s.winner, market: s.market,
+      human: s.human, difficulty: s.difficulty, over: s.over, winner: s.winner, market: s.market, hist: s.hist,
       map: { terrain: b64(m.terrain), node: b64(m.node), nodeAmt: b64(m.nodeAmt), block: b64(m.block), bld: b64(m.bld), variant: b64(m.variant), starts: m.starts },
       explored: b64(s.fog.explored),
       // p.U / p.B / p.mod adalah data turunan: dibangun ulang saat dimuat.
@@ -51,9 +51,11 @@
       difficulty: d.difficulty, mp: false,
       fog: { explored: unb64(d.explored, Uint8Array), visible: new Uint8Array(NN), version: 0 },
       market: Object.assign({}, BF.MARKET.base, d.market),          // simpanan lama: harga dasar
+      hist: d.hist || [],
     };
     for (const p of s.players) {
       if (!BF.FACTIONS[p.faction]) throw new Error('Wangsa tidak dikenal di simpanan');
+      if (!p.stat) p.stat = BF.newStat();                           // simpanan lama: statistik rinci mulai dari nol
       BF.rebuildDefs(p);
     }
     for (const u of s.units) s.byId.set(u.id, u);

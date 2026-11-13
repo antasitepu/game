@@ -107,7 +107,7 @@
       if (!BF.placeable(s, owner, type, tx, ty)) return { err: 'place' };
       if (!BF.canAfford(p, d.cost)) return { err: 'res' };
       const old = s.byId.get(s.map.bld[idx(tx, ty)]);
-      if (old) { BF.kill(s, old); p.losses--; }
+      if (old) BF.kill(s, old, true);
       BF.pay(p, d.cost);
       return { b: BF.spawnBuilding(s, type, owner, tx, ty, false) };
     },
@@ -182,8 +182,7 @@
         if (!e.built) BF.refund(p, p.B[e.type].cost, 1 - e.progress);
         for (let i = e.queue.length - 1; i >= 0; i--) BF.cmd.cancel(s, e, i);
       }
-      BF.kill(s, e);
-      p.losses--;
+      BF.kill(s, e, true);
     },
   };
 
