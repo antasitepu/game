@@ -62,6 +62,7 @@ tulang, bobot, dan klip gerak. Tiap unit punya skrip pendek yang memilih pakaian
 | `pengawal` | `pengawal.py` | diam, jalan, lari, serang (tusukan), mati |
 | `pemanah` | `pemanah.py` | diam, jalan, lari, serang (memanah; tali dilepas di 0,58 detik), mati |
 | `pemburu` | `pemburu.py` | sama dengan pemanah |
+| `pengamuk` | `pengamuk.py` | diam, jalan, lari, serang (dua hantaman kapak: 0,29 dan 0,46 detik), mati |
 
 1. `blender -b --factory-startup --python tools/aset/blender/<unit>.py -- tools/aset/sumber/<unit>`
    Hasilnya `tools/aset/sumber/<unit>.glb` (berkerangka dan beranimasi) serta pratinjau PNG di folder itu, termasuk
