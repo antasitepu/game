@@ -691,7 +691,7 @@
           if (e.unit === 'catapult') m = models.catapultWreck(e.owner || 0).clone();            // bangkai: geometri bersama, jangan dibuang
           else if (e.bt && !B[e.bt].barrier) m = makeRuin(s, e);
           else if (e.type === 'rubble') m = models.rubble(e.size).clone();
-          else if (e.unit === 'worker') m = models.unit('worker', e.owner || 0);          // rebah dengan klip "mati" lalu diam
+          else if (e.unit && models.rigged(e.unit)) m = models.unit(e.unit, e.owner || 0);          // model berkerangka: rebah dengan klip "mati" lalu diam
           else {
             m = new THREE.Mesh(models.corpse(e.owner || 0, e.big), M.flat);
             m.userData.own = true;

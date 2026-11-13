@@ -1356,11 +1356,8 @@
     return (wcache[owner] = g);
   };
 
-  // ---- pekerja beranimasi: model berkerangka dari aset (BF.assets.model.pekerja) dengan klip diam, jalan, jalan_bawa,
-  // kerja, lempar, mati. Tiap unit punya tulang dan AnimationMixer sendiri; geometri, bahan, dan klip dipakai bersama.
-  // Tunik memakai salinan bahan per pemain yang dikalikan warna tim. Alat kerja dan bawaan adalah mesh kaku yang
-  // menempel pada tulang; geometrinya ditulis dalam ruang model (pose istirahat) dan dibawa ke ruang tulang oleh matriks
-  // ikat-balik tulang itu.
+  // ---- unit beranimasi: model berkerangka dari aset (BF.assets.model.<nama>) dengan klip diam, jalan, lari, mati, dan
+  // klip khusus tiap jenis (pekerja: jalan_bawa, kerja, lempar; prajurit: serang).
   // Laju tanah sebuah klip langkah di tempat (tile/detik pada kecepatan putar 1): kecepatan mundur ujung telapak kaki
   // (tulang ToeBase) selama menapak. Kaki dianggap menapak saat tingginya dalam 0,012 dari titik terendah sepanjang
   // klip; pada klip lari ada fase melayang (tak ada kaki yang menapak) yang tidak dihitung. Unit yang bergerak secepat
@@ -1432,101 +1429,135 @@
     })));
   }
 
-  let WK = null;
-  function workerKit() {
-    if (WK) return WK;
-    const m = BF.assets.model.pekerja, K = m.kerangka, at = name => K.tulang.findIndex(t => t.nama === name);
+  // Detik saat tangan kanan paling jauh terjulur ke depan dalam sebuah klip pukul/lempar (saat kena/lepas).
+  function reachTime(m, clip) {
+    const { akar, skeleton } = BF.assets.kerangkaBaru(m), root = new THREE.Object3D(), v = new THREE.Vector3(), hand = skeleton.bones.find(b => b.name === 'RightHand'), N = 48;
+    for (const b of akar) root.add(b);
+    const mixer = new THREE.AnimationMixer(root);
+    mixer.clipAction(clip).play();
+    let best = 0, bz = -Infinity;
+    for (let i = 0; i <= N; i++) {
+      const t = clip.duration * Math.min(i / N, 0.9999);
+      mixer.setTime(t);
+      root.updateMatrixWorld(true);
+      const z = v.setFromMatrixPosition(hand.matrixWorld).z;
+      if (z > bz) { bz = z; best = t; }
+    }
+    mixer.stopAllAction();
+    mixer.uncacheRoot(root);
+    skeleton.dispose();
+    return best;
+  }
+
+  // Unit yang memakai model berkerangka dari aset (bila modelnya ada; kalau tidak, rig buatan kode di bawah tetap dipakai).
+  // strike: klip sekali-main yang dipicu saat unit menyerang (pekerja: melempar tombak buruan).
+  const RIGGED = { worker: { model: 'pekerja', strike: 'lempar' }, spear: { model: 'tombak', strike: 'serang' } };
+  const kits = {};
+  function rigKit(type) {
+    if (type in kits) return kits[type];
+    const R = RIGGED[type], m = R && BF.assets.model[R.model];
+    if (!m || !m.klip || !m.klip.diam || !m.klip.jalan || !m.klip.mati) return (kits[type] = null);
+    const K = m.kerangka, at = name => K.tulang.findIndex(t => t.nama === name);
+    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.4, -0.2), 1.3);      // longgar: mencakup senjata dan rebah saat mati
+    // klip bergerak: `lari` / `lari_bawa` dari aset bila ada, kalau tidak diturunkan dari klip jalan; laju tanahnya
+    // diukur supaya kecepatan putar klip bisa disamakan dengan kecepatan gerak unit (kaki tidak meluncur)
+    const lari = m.klip.lari || runClip(m, m.klip.jalan, 'lari'), gerak = { lari: { clip: lari, laju: gaitSpeed(m, lari) } };
+    if (m.klip.jalan_bawa) {
+      const bawa = m.klip.lari_bawa || (m.klip.lari ? carryClip(lari, m.klip.jalan_bawa, 'lari_bawa') : runClip(m, m.klip.jalan_bawa, 'lari_bawa'));
+      gerak.lari_bawa = { clip: bawa, laju: gaitSpeed(m, bawa) };
+    }
+    // simulasi sudah menjatuhkan kerusakan/melepas tombak saat serangan dipicu, jadi klip pukul dimulai sesaat sebelum
+    // detik kena — yang terlihat adalah hantamannya dan gerak kembalinya
+    const strike = m.klip[R.strike] ? R.strike : null, strikeAt = strike ? Math.max(0, reachTime(m, m.klip[strike]) - 0.12) : 0;
+    const kit = kits[type] = { type, m, K, gerak, strike, strikeAt, tint: {}, extras: [] };
+    if (type !== 'worker') return kit;
+    // pekerja: alat kerja di tangan kanan dan bawaan di punggung — mesh kaku yang menempel pada tulang; geometrinya ditulis
+    // dalam ruang model (pose istirahat) dan dibawa ke ruang tulang oleh matriks ikat-balik tulang itu
     const rest = k => new THREE.Matrix4().copy(K.ibm[k]).invert(), P = k => new THREE.Vector3().setFromMatrixPosition(rest(k));
     const mk = fn => { const b = new MB(); b.smooth = true; fn(b); return b.geometry('flat'); };
-    m.lod[0].boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.4, -0.2), 1.2);      // longgar: mencakup rebah saat mati
     const hand = at('RightHand'), back = at('Spine1'), hp = P(hand), sh = P(at('LeftArm'));
     const grip = new THREE.Vector3(0, 1, 0).transformDirection(rest(hand)).multiplyScalar(0.05).add(hp);      // kepalan: 5 cm dari pergelangan
-    const tool = mk(b => {                                // cangkul/kapak: gagang ke depan, bilah di ujungnya
+    kit.extras.push(['tool', mk(b => {                    // cangkul/kapak: gagang ke depan, bilah di ujungnya
       b.pbr = [0.8, 0];
       b.tube('flat', [grip.x, grip.y, grip.z - 0.07], [grip.x, grip.y + 0.02, grip.z + 0.3], 0.011, 0.011, 6, C('#7a5632'));
       b.use(PLATE, () => b.box('flat', grip.x - 0.008, grip.y - 0.09, grip.z + 0.25, grip.x + 0.008, grip.y + 0.05, grip.z + 0.31, STEEL, 1, 1));
-    });
-    const packs = {};
-    for (const res of BF.RES) packs[res] = mk(b => {      // bawaan: ikatan kayu di bahu kiri, atau karung yang disandang di punggung
+    }), hand]);
+    for (const res of BF.RES) kit.extras.push(['pack_' + res, mk(b => {      // bawaan: ikatan kayu di bahu kiri, atau karung yang disandang di punggung
       const x = sh.x * 0.9, y = sh.y + 0.075, z = sh.z - 0.01, col = C(BF.RES_COLOR[res]), sack = C('#b89e74').lerp(col, 0.45);
       b.pbr = [0.9, 0];
       if (res === 'wood') { for (const [dx, dy] of [[-0.03, 0], [0.03, 0], [0, 0.045]]) b.tube('flat', [x + dx, y + dy - 0.01, z - 0.13], [x + dx, y + dy - 0.01, z + 0.13], 0.03, 0.03, 7, mul(col, 0.9 + dy * 4)); return; }
       b.ball('flat', sh.x * 0.35, sh.y - 0.085, sh.z - 0.098, 0.08, sack, 1, 1.05, 1.2, 0.75);                          // badan karung menempel di punggung
       b.tube('flat', [sh.x * 0.5, sh.y - 0.01, sh.z - 0.08], [sh.x * 0.95, sh.y + 0.04, sh.z + 0.03], 0.032, 0.02, 6, mul(sack, 0.8));   // leher karung melewati bahu kiri
       b.ball('flat', sh.x * 0.35, sh.y - 0.1, sh.z - 0.152, 0.034, col, 1, 1.4, 1.4, 0.4);                               // tanda warna sumber daya
-    });
-    // klip bergerak: `lari` / `lari_bawa` dari aset bila ada, kalau tidak diturunkan dari klip jalan; laju tanahnya
-    // diukur supaya kecepatan putar klip bisa disamakan dengan kecepatan gerak unit (kaki tidak meluncur)
-    const lari = m.klip.lari || runClip(m, m.klip.jalan, 'lari');
-    const bawa = m.klip.lari_bawa || (m.klip.lari ? carryClip(lari, m.klip.jalan_bawa, 'lari_bawa') : runClip(m, m.klip.jalan_bawa, 'lari_bawa'));
-    const gerak = { lari: { clip: lari, laju: gaitSpeed(m, lari) }, lari_bawa: { clip: bawa, laju: gaitSpeed(m, bawa) } };
-    return (WK = { m, K, hand, back, tool, packs, gerak, tunik: {} });
+    }), back]);
+    return kit;
   }
+  models.rigged = type => !!rigKit(type);
 
-  function workerUnit(owner) {
-    const k = workerKit(), m = k.m, group = new THREE.Group(), ud = group.userData;
-    let tunik = k.tunik[owner];
-    if (!tunik) { tunik = k.tunik[owner] = m.bahan[1].clone(); tunik.color = C(BF.SLOTS[owner].color); }
-    const { akar, skeleton } = BF.assets.kerangkaBaru(m), mesh = new THREE.SkinnedMesh(m.lod[0], [m.bahan[0], tunik]);
+  // Tiap unit punya tulang dan AnimationMixer sendiri; geometri, bahan, dan klip dipakai bersama. Bahan bertanda `tim`
+  // (tunik, kain) memakai salinan per pemain yang dikalikan warna tim.
+  function riggedUnit(kit, owner) {
+    const m = kit.m, group = new THREE.Group(), ud = group.userData;
+    const tint = kit.tint[owner] || (kit.tint[owner] = m.bahan.map(b => { if (!b.userData.tim) return b; const c = b.clone(); c.color = C(BF.SLOTS[owner].color); return c; }));
+    const { akar, skeleton } = BF.assets.kerangkaBaru(m), mesh = new THREE.SkinnedMesh(m.lod[0], tint);
     mesh.castShadow = true;
     for (const b of akar) mesh.add(b);
     mesh.bind(skeleton, new THREE.Matrix4());
     group.add(mesh);
-    ud.type = 'worker';
+    ud.type = kit.type;
+    ud.kit = kit;
     ud.skeleton = skeleton;
     ud.mixer = new THREE.AnimationMixer(mesh);
     ud.act = {};
     for (const n in m.klip) ud.act[n] = ud.mixer.clipAction(m.klip[n]);
-    for (const n in k.gerak) ud.act[n] = ud.mixer.clipAction(k.gerak[n].clip);
-    for (const n of ['lempar', 'mati']) { ud.act[n].setLoop(THREE.LoopOnce, 1); ud.act[n].clampWhenFinished = true; }
+    for (const n in kit.gerak) ud.act[n] = ud.mixer.clipAction(kit.gerak[n].clip);
+    for (const n of [kit.strike, 'mati']) if (n) { ud.act[n].setLoop(THREE.LoopOnce, 1); ud.act[n].clampWhenFinished = true; }
     ud.cur = null; ud.once = null; ud.lastT = null; ud.atk0 = 0;
-    const attach = (geo, bone) => {
-      const o = new THREE.Mesh(geo, BF.tex.mat.unit);
+    ud.extras = {};
+    for (const [name, geo, bone] of kit.extras) {
+      const o = ud.extras[name] = new THREE.Mesh(geo, BF.tex.mat.unit);
       o.matrixAutoUpdate = false;
-      o.matrix.copy(k.K.ibm[bone]);
+      o.matrix.copy(kit.K.ibm[bone]);
       o.castShadow = true;
       o.visible = false;
       skeleton.bones[bone].add(o);
-      return o;
-    };
-    ud.extras = { tool: attach(k.tool, k.hand) };
-    for (const res of BF.RES) ud.extras['pack_' + res] = attach(k.packs[res], k.back);
+    }
     return group;
   }
 
-  // Animasi pekerja: pilih klip dari keadaan unit, bersilang-pudar saat berganti, lalu majukan mixer sebesar selisih
-  // waktu simulasi sejak panggilan terakhir (jadi ikut berhenti saat jeda dan ikut cepat pada kecepatan 2×).
-  function poseWorker(ud, st, a) {
+  // Animasi unit berkerangka: pilih klip dari keadaan unit, bersilang-pudar saat berganti, lalu majukan mixer sebesar
+  // selisih waktu simulasi sejak panggilan terakhir (jadi ikut berhenti saat jeda dan ikut cepat pada kecepatan 2×).
+  function poseRigged(ud, st, a) {
     // st.skip: detik yang dilompati pada panggilan pertama (jasad yang baru terlihat lama setelah unitnya tewas)
-    const A = ud.act, dt = ud.lastT === null ? st.skip || 0 : Math.min(0.1, Math.max(0, st.t - ud.lastT));
+    const A = ud.act, kit = ud.kit, dt = ud.lastT === null ? st.skip || 0 : Math.min(0.1, Math.max(0, st.t - ud.lastT));
     ud.lastT = st.t;
-    // lemparan tombak buruan: dipicu saat atk melonjak. Simulasi sudah melepas tombaknya pada saat itu, jadi klip
-    // dimulai dari detik pelepasan (0,4) — yang terlihat adalah ayunan lanjutannya.
-    if (!st.dead && a > ud.atk0 + 0.05 && !st.working) ud.once = 'lempar';
+    const hit = !!kit.strike && !st.dead && !st.working && a > ud.atk0 + 0.05;        // serangan baru dipicu (atk melonjak)
     ud.atk0 = a;
-    let want = st.dead ? 'mati' : st.working ? 'kerja' : st.moving ? (st.carry > 0 ? 'lari_bawa' : 'lari') : 'diam';
+    if (hit) ud.once = kit.strike;
+    let want = st.dead ? 'mati' : st.working && A.kerja ? 'kerja' : st.moving ? (st.carry > 0 && A.lari_bawa ? 'lari_bawa' : 'lari') : 'diam';
     if (ud.once) {
-      if (want !== 'diam' || (ud.cur === ud.once && !A[ud.once].isRunning())) ud.once = null;      // selesai, atau unit disuruh hal lain
+      if (want !== 'diam' || (!hit && ud.cur === ud.once && !A[ud.once].isRunning())) ud.once = null;      // selesai, atau unit disuruh hal lain
       else want = ud.once;
     }
-    if (want !== ud.cur) {
+    if (want !== ud.cur || (hit && want === kit.strike)) {
       const next = A[want], prev = ud.cur && A[ud.cur];
       next.reset();
-      next.time = want === 'lempar' ? 0.4 : want === 'diam' || want === 'kerja' ? (st.id * 0.37) % next.getClip().duration : 0;      // tidak serempak antar-pekerja
+      next.time = want === kit.strike ? kit.strikeAt : want === 'diam' || want === 'kerja' ? (st.id * 0.37) % next.getClip().duration : 0;      // diam/kerja tidak serempak antar-unit
       next.play();
-      if (prev) prev.crossFadeTo(next, 0.15, false);
+      if (prev && prev !== next) prev.crossFadeTo(next, 0.15, false);
       ud.cur = want;
     }
     // kecepatan putar klip lari = kecepatan unit ÷ laju tanah klip (dibatasi agar tidak terlalu lambat/tergesa)
-    for (const n in WK.gerak) A[n].timeScale = BF.clamp((st.speed || 2.4) / WK.gerak[n].laju, 0.6, 2.6);
+    for (const n in kit.gerak) A[n].timeScale = BF.clamp((st.speed || 2.4) / kit.gerak[n].laju, 0.6, 2.6);
     ud.mixer.update(dt);
-    ud.extras.tool.visible = !!st.working;
-    for (const res of BF.RES) ud.extras['pack_' + res].visible = !st.dead && !st.working && st.carry > 0 && st.carryType === res;
+    if (ud.extras.tool) ud.extras.tool.visible = !!st.working;
+    for (const res of BF.RES) if (ud.extras['pack_' + res]) ud.extras['pack_' + res].visible = !st.dead && !st.working && st.carry > 0 && st.carryType === res;
   }
 
   // Objek unit: Group berisi SkinnedMesh + kerangkanya sendiri (geometri & material dipakai bersama antar-unit sejenis).
   models.unit = function (type, owner) {
-    if (type === 'worker' && BF.assets.model.pekerja && BF.assets.model.pekerja.klip) return workerUnit(owner);
+    const kit = rigKit(type);
+    if (kit) return riggedUnit(kit, owner);
     const d = unitDef(type, owner), group = new THREE.Group(), mat = BF.tex.mat.unit, ud = group.userData;
     ud.type = type;
     if (d.parts) {
@@ -1649,7 +1680,7 @@
   // Pose dari state simulasi. st: {t (detik), id, moving, working, atk (1 saat memukul → 0), carryType, carry}
   models.pose = function (group, st) {
     const ud = group.userData, type = ud.type, a = Math.min(1, Math.max(0, st.atk));
-    if (ud.mixer) { poseWorker(ud, st, a); return; }
+    if (ud.mixer) { poseRigged(ud, st, a); return; }
     if (ud.parts) {                                                   // pelontar: lengan menyentak ke palang lalu ditarik kembali oleh kerekan
       const P = ud.parts;
       P.arm.rotation.x = ARM_REST + ARM_FIRE * a * a * (3 - 2 * a);

@@ -111,6 +111,10 @@ module.exports = async ({ page, check }) => {
   await p.click(foe.x, foe.y, 'right');
   await p.sleep(100);
   check('klik kanan musuh → perintah serang', await p.ev(`(() => { const o = BF.game.s.byId.get(window.__t.me).order; return o.type === 'attack' && o.tid === window.__t.foe; })()`));
+  // prajurit tombak memakai model berkerangka dari aset: berlari ke sasaran, lalu klip tusukan tiap kali menyerang
+  const anim = new Set();
+  for (let k = 0; k < 40 && !(anim.has('lari') && anim.has('serang')); k++) { anim.add(await p.ev(`(() => { const g = BF.gfx.unitGroup(window.__t.me); return g && g.userData.mixer ? g.userData.cur : 'tanpa-kerangka'; })()`)); await p.sleep(120); }
+  check('prajurit tombak beranimasi: lari ke sasaran lalu menusuk', anim.has('lari') && anim.has('serang') && !anim.has('tanpa-kerangka'), [...anim]);
   await step(20 * 12);
   check('musuh tewas & tercatat', await p.ev(`!BF.game.s.byId.has(window.__t.foe) && BF.game.s.players[0].kills === 1`), await p.ev(`(() => { const s = BF.game.s, me = s.byId.get(window.__t.me), foe = s.byId.get(window.__t.foe); return { kills: s.players[0].kills, me: me && { x: +me.x.toFixed(1), y: +me.y.toFixed(1), hp: me.hp, o: me.order.type, tid: me.order.tid }, foe: foe && { x: +foe.x.toFixed(1), y: +foe.y.toFixed(1), hp: foe.hp, o: foe.order.type } }; })()`));
 
