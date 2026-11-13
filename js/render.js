@@ -721,7 +721,7 @@
         live.add(e);
         let m = W.fxMap.get(e);
         if (!m) {
-          if (e.unit === 'catapult') m = models.catapultWreck(e.owner || 0).clone();            // bangkai: geometri bersama, jangan dibuang
+          if (e.unit === 'catapult' && !models.rigged(e.unit)) m = models.catapultWreck(e.owner || 0).clone();      // (cadangan tanpa aset) bangkai: geometri bersama, jangan dibuang
           else if (e.bt && !B[e.bt].barrier) m = makeRuin(s, e);
           else if (e.type === 'rubble') m = models.rubble(e.size).clone();
           else if (e.unit && models.rigged(e.unit)) m = models.unit(e.unit, e.owner || 0);          // model berkerangka: rebah dengan klip "mati" lalu diam

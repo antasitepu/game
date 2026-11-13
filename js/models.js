@@ -1471,6 +1471,9 @@
     rider: { model: 'penunggang', strike: 'serang', at: 0.35, feet: HOOVES, sphere: MOUNTED },         // kuda + penunggang satu kerangka
     harcher: { model: 'pemanah_kuda', strike: 'serang', at: 0.58, feet: HOOVES, sphere: MOUNTED },
     healer: { model: 'tabib' },                                      // tanpa klip serang; klip `kerja` (berulang) = menyembuhkan
+    // Pelontar Batu: mesin beroda + juru lontar dalam satu kerangka. Klip serang 4,2 s: batu lepas di 0,2 s, lalu lengan
+    // ditarik turun dan batu baru dimuat (cooldown unit 5 s). Saat mati rangkanya ambruk dan bagiannya menyebar.
+    catapult: { model: 'pelontar', strike: 'serang', at: 0.2, sphere: [0, 0.45, -0.2, 1.4] },
   };
   const kits = {};
   function rigKit(type) {
