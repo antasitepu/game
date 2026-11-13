@@ -19,3 +19,11 @@ sendiri oleh skrip tools/aset/blender/rusa.py, babi.py, dan hewan.py; tekstur bu
 
 Bila nanti ditambah aset berlisensi CC BY (mis. hasil paket gratis generator AI), cantumkan nama dan pembuatnya di sini
 dan di layar Bantuan game — lisensi itu mewajibkan atribusi.
+
+Ringkasan lisensi untuk rilis publik:
+- Aset dari Poly Haven berlisensi CC0: boleh dipakai dan disebarkan tanpa syarat; menyebut sumbernya tidak wajib.
+- Model, kerangka, dan gerak unit serta hewan dibuat sendiri untuk game ini.
+- Game tidak memuat berkas suara, huruf, atau gambar lain dari pihak luar.
+- Pustaka yang ikut disajikan ke pemain: three.js (lisensi MIT; teksnya di js/vendor/THREE-LICENSE.txt dan harus tetap
+  disertakan).
+- Alat yang hanya dipakai saat membuat aset dan tidak ikut disajikan: Blender, meshoptimizer (MIT), cwebp (BSD).

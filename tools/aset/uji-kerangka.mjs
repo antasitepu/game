@@ -84,6 +84,12 @@ async function ujiJalur(label, glb, tanpaGerakAkar) {
   cek('dua bahan berbagi satu tekstur, bahan "kain_tim" bertanda warna tim', bhn.length === 2 && bhn[0].peta === bhn[1].peta && !bhn[0].tim && bhn[1].tim === true
     && model.bahan[0].map === model.bahan[1].map && !model.bahan[0].userData.tim && model.bahan[1].userData.tim === true, JSON.stringify(bhn));
   cek('klip diam, jalan, serang ada', ['diam', 'jalan', 'serang'].every(n => model.klip[n]), Object.keys(model.klip).join(', '));
+  // LOD ringan berbagi vertex dengan LOD 0: hanya indeksnya yang lain, dan tiap LOD hanya memakai awalan vertex (v di manifest)
+  const L = man.model.pekerja.lod, maks = g => g.index.array.reduce((m, i) => Math.max(m, i), 0), urutBahan = g => g.groups.map(x => x.materialIndex).join();
+  cek('tiga LOD berbagi vertex dan kulit LOD 0; tiap LOD memakai awalan vertex yang rapat', model.lod.length === 3 && [1, 2].every(n => L[n].bersama === 0
+    && ['position', 'normal', 'uv', 'color', 'skinIndex', 'skinWeight'].every(a => model.lod[n].attributes[a] === model.lod[0].attributes[a])
+    && model.lod[n].index.count < model.lod[n - 1].index.count && maks(model.lod[n]) === L[n].v - 1 && L[n].v < L[n - 1].v && urutBahan(model.lod[n]) === urutBahan(model.lod[0])),
+    L.map(l => l.i / 3 + ' segitiga pada ' + l.v + ' vertex').join(', '));
 
   const geo = model.lod[0], { akar, skeleton } = BF.assets.kerangkaBaru(model);
   const mesh = new THREE.SkinnedMesh(geo, model.bahan);

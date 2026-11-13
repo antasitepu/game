@@ -49,26 +49,27 @@ const RESEP = {
   // Unit berkerangka & beranimasi: GLB sendiri (lokal) di sumber/<sumber>.glb, mis. model AI yang dirig & dianimasikan di
   // Mixamo lalu digabung di Blender. File itu sengaja di sumber/ (tidak masuk git): isinya animasi mentah Mixamo, yang tidak
   // boleh dibagikan ulang sebagai aset lepas. Selama belum ada, olah semua melewatinya. tinggi: puncak kepala unit buatan kode.
-  pekerja: { jenis: 'kerangka', sumber: 'pekerja', lokal: true, tinggi: 0.86, tekstur: 512, lod: [3000] },
+  // lod[1] ±45% untuk mutu grafis hemat (ponsel), lod[2] ±20% untuk kamera jauh; kerangka, klip, dan urutan bahan sama.
+  pekerja: { jenis: 'kerangka', sumber: 'pekerja', lokal: true, tinggi: 0.86, tekstur: 512, lod: [3000, 1350, 600] },
   // Unit manusia lain memakai skala yang sama dengan pekerja (bukan tinggi), supaya tombak/helm tidak mengecilkan badannya.
-  tombak: { jenis: 'kerangka', sumber: 'tombak', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
-  pedang: { jenis: 'kerangka', sumber: 'pedang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600] },
-  pengawal: { jenis: 'kerangka', sumber: 'pengawal', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600] },
-  pemanah: { jenis: 'kerangka', sumber: 'pemanah', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3200] },
-  pemburu: { jenis: 'kerangka', sumber: 'pemburu', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
-  pengamuk: { jenis: 'kerangka', sumber: 'pengamuk', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
-  tabib: { jenis: 'kerangka', sumber: 'tabib', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
+  tombak: { jenis: 'kerangka', sumber: 'tombak', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400, 1530, 680] },
+  pedang: { jenis: 'kerangka', sumber: 'pedang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600, 1620, 720] },
+  pengawal: { jenis: 'kerangka', sumber: 'pengawal', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600, 1620, 720] },
+  pemanah: { jenis: 'kerangka', sumber: 'pemanah', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3200, 1440, 640] },
+  pemburu: { jenis: 'kerangka', sumber: 'pemburu', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400, 1530, 680] },
+  pengamuk: { jenis: 'kerangka', sumber: 'pengamuk', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400, 1530, 680] },
+  tabib: { jenis: 'kerangka', sumber: 'tabib', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400, 1530, 680] },
   // Unit berkuda: kuda dan penunggang satu mesh dan satu kerangka (40 tulang); titik asal di tanah di bawah HorseRoot.
-  penunggang: { jenis: 'kerangka', sumber: 'penunggang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
-  pemanah_kuda: { jenis: 'kerangka', sumber: 'pemanah_kuda', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
+  penunggang: { jenis: 'kerangka', sumber: 'penunggang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000, 2250, 1000] },
+  pemanah_kuda: { jenis: 'kerangka', sumber: 'pemanah_kuda', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000, 2250, 1000] },
   // Bangunan rakitan buatan skrip Blender (percontohan): satuan sumber = tile, titik asal di tanah di tengah tapak.
   // tapak: sisi denah (tile); badan: [x0, z0, x1, z1, tinggi cucuran] per bagian dalam koordinat sudut tapak, untuk perancah.
   // Belum dipakai game: asetnya tidak ikut `olah semua` (percontohan: true) dan dibuat hanya bila resepnya disebut.
   pasar: { jenis: 'rakitan', sumber: 'pasar', lokal: true, percontohan: true, tapak: 3, badan: [[0.2, 0.3, 2.8, 1.76, 1.0]], lod: [1] },
   // Hewan liar: kerangka berkaki empat berawalan Beast, tanpa bahan tim; skala sama dengan unit manusia.
-  rusa: { jenis: 'kerangka', sumber: 'rusa', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800] },
-  rusa_jantan: { jenis: 'kerangka', sumber: 'rusa_jantan', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1900] },
-  babi: { jenis: 'kerangka', sumber: 'babi', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800] },
+  rusa: { jenis: 'kerangka', sumber: 'rusa', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800, 810, 360] },
+  rusa_jantan: { jenis: 'kerangka', sumber: 'rusa_jantan', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1900, 860, 380] },
+  babi: { jenis: 'kerangka', sumber: 'babi', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800, 810, 360] },
 };
 const TEKSTUR = {
   rumput: { sumber: 'forrest_ground_01', peta: 'Diffuse', ukuran: 1024, kualitas: 80 },
@@ -173,12 +174,19 @@ function tulisKerangka(k, dorong) {
 
 // lods: [[{ mesh, bahan: indeks }, …], …] → satu file biner; tata letak per LOD: pos f32, normal i8, uv f32, warna u8, indeks u16,
 // lalu (mesh berkerangka) nomor tulang u8×4 dan bobot u8×4 mulai dari `kulit` (tiap blok rata 4 byte). kerangka: lihat tulisKerangka.
-function tulisModel(nama, lods, bahan, catatan, kerangka) {
-  const blok = [], lod = [];
+// berbagi: LOD ≥ 1 hanya menulis indeksnya (u16 mulai dari `idx`) atas vertex LOD `bersama`; `v` = jumlah vertex awalan yang dipakainya.
+function tulisModel(nama, lods, bahan, catatan, kerangka, berbagi) {
+  const blok = [], lod = [], B = berbagi ? susunBerbagi(nama, lods) : null;
   let off = 0;
   const dorong = ta => { const mulai = off, b = Buffer.from(ta.buffer, ta.byteOffset, ta.byteLength), pad = (4 - (b.length % 4)) % 4; blok.push(b); if (pad) blok.push(Buffer.alloc(pad)); off += b.length + pad; return mulai; };
-  for (const grup of lods) {
-    const isi = grup.filter(g => g.mesh && g.mesh.idx.length), m = G.gabung(isi.map(g => g.mesh)), v = m.pos.length / 3;
+  lods.forEach((grup, n) => {
+    const isi = grup.filter(g => g.mesh && g.mesh.idx.length);
+    if (B && n) {
+      let s = 0;
+      lod.push({ bersama: 0, v: B.v[n], i: B.idx[n].length, idx: dorong(Uint16Array.from(B.idx[n])), grup: isi.map(g => { const r = [s, g.mesh.idx.length, g.bahan]; s += g.mesh.idx.length; return r; }) });
+      return;
+    }
+    const m = B ? B.mesh : G.gabung(isi.map(g => g.mesh)), v = m.pos.length / 3;
     if (v > 65535) throw new Error(nama + ': LOD terlalu besar (' + v + ' vertex), turunkan targetnya');
     const nor = new Int8Array(v * 3), col = new Uint8Array(v * 3).fill(255);
     for (let i = 0; i < v * 3; i++) { nor[i] = Math.round(m.nor[i] * 127); if (m.col) col[i] = Math.round(Math.min(1, Math.max(0, m.col[i])) * 255); }
@@ -188,13 +196,32 @@ function tulisModel(nama, lods, bahan, catatan, kerangka) {
     const entri = { off: mulai, v, i: m.idx.length, grup: isi.map(g => { const r = [s, g.mesh.idx.length, g.bahan]; s += g.mesh.idx.length; return r; }) };
     if (m.sendi) { const [j8, w8] = kulitU8(m); entri.kulit = dorong(j8); dorong(w8); }
     lod.push(entri);
-  }
+  });
   const ekstra = kerangka ? tulisKerangka(kerangka, dorong) : {};
   const buf = Buffer.concat(blok), k = G.kotak(G.gabung(lods[0].map(g => g.mesh)));
   fs.mkdirSync(path.join(KELUAR, 'm'), { recursive: true });
   fs.writeFileSync(path.join(KELUAR, 'm', nama + '.bin'), buf);
   manifest.model[nama] = { file: 'm/' + nama + '.bin', bahan, lod, tinggi: +k.max[1].toFixed(3), radius: +Math.max(-k.min[0], k.max[0], -k.min[2], k.max[2]).toFixed(3), ...ekstra };
   console.log('  ' + nama.padEnd(9) + ' segitiga/LOD: ' + lod.map(l => String(l.i / 3).padStart(5)).join(' ') + '   ' + (buf.length / 1024).toFixed(0).padStart(4) + ' KB   tinggi ' + k.max[1].toFixed(2) + ', radius ' + manifest.model[nama].radius.toFixed(2) + (catatan ? '   ' + catatan : ''));
+}
+
+// LOD yang berbagi vertex: mesh tiap LOD ≥ 1 belum dipadatkan, jadi indeksnya menunjuk vertex LOD 0 juga. Vertex diurutkan
+// ulang supaya yang dipakai LOD paling ringan berada di depan: LOD n hanya menyentuh v[n] vertex pertama (awalan yang rapat,
+// supaya GPU ponsel yang mengolah seluruh rentang indeks tidak ikut mengolah vertex yang tidak dipakai).
+function susunBerbagi(nama, lods) {
+  const isi = grup => grup.filter(g => g.mesh && g.mesh.idx.length), dasar = isi(lods[0]), m = G.gabung(dasar.map(g => g.mesh)), nv = m.pos.length / 3;
+  const alas = new Map();
+  let a = 0;
+  for (const g of dasar) { alas.set(g.bahan, [a, g.mesh.pos]); a += g.mesh.pos.length / 3; }
+  const idx = lods.map(grup => isi(grup).flatMap(g => {
+    const [mulai, pos] = alas.get(g.bahan) || [];
+    if (pos !== g.mesh.pos) throw new Error(nama + ': LOD yang berbagi vertex harus disederhanakan dari LOD 0 tanpa dipadatkan');
+    return Array.from(g.mesh.idx, i => i + mulai);
+  }));
+  const kelas = new Uint8Array(nv);
+  idx.forEach((ix, n) => { for (const i of ix) kelas[i] = n; });
+  const mesh = G.urutkanVertex(m, Array.from({ length: nv }, (_, i) => i).sort((p, q) => kelas[q] - kelas[p] || p - q));
+  return { mesh, idx: idx.map(ix => ix.map(i => mesh.peta[i])), v: lods.map((_, n) => kelas.reduce((s, k) => s + (k >= n), 0)) };
 }
 
 function tulisTekstur(nama, src, ukuran, kualitas) {
@@ -339,7 +366,14 @@ async function buatKerangka(nama, r) {
   for (const c of k.catatan) console.log('  ' + nama + ': ' + c);
   const daftarBahan = [...new Set(k.bagian.map(b => b.bahan))];
   const mesh = daftarBahan.map(b => satukan(k.bagian.filter(x => x.bahan === b))), total = mesh.reduce((s, m) => s + G.jumlahTri(m), 0);
-  const lods = r.lod.map(t => mesh.map((m, i) => ({ mesh: G.sederhanakan(m, t * G.jumlahTri(m) / total), bahan: i })));
+  // LOD berikutnya disederhanakan berantai dari LOD sebelumnya tanpa memadatkan vertex: hanya daftar indeks lain atas vertex
+  // LOD 0 (lihat `berbagi` di tulisModel), sehingga unduhan dan memori GPU hampir tidak bertambah.
+  const tingkat = [mesh.map(m => G.sederhanakan(m, r.lod[0] * G.jumlahTri(m) / total))];
+  for (const t of r.lod.slice(1)) {
+    const lalu = tingkat[tingkat.length - 1], jumlah = lalu.reduce((s, m) => s + G.jumlahTri(m), 0);
+    tingkat.push(lalu.map(m => G.sederhanakan(m, t * G.jumlahTri(m) / jumlah, null, true)));
+  }
+  const lods = tingkat.map(l => l.map((m, i) => ({ mesh: m, bahan: i })));
   const tertulis = new Map(), orm = new Map();
   const bahan = daftarBahan.map(b => {
     if (!b.gbrWarna) throw new Error(nama + ': bahan "' + b.nama + '" tanpa tekstur warna belum didukung');
@@ -349,7 +383,7 @@ async function buatKerangka(nama, r) {
       ...(/(^|_)tim(\.|_|$)/i.test(b.nama) ? { tim: true } : {}) };
   });
   const klip = k.klip.filter(c => c.jalur.length).map(c => c.nama + ' ' + c.durasi.toFixed(2) + 's');
-  tulisModel(nama, lods, bahan, k.tulang.length + ' tulang; klip: ' + (klip.join(', ') || '-'), k);
+  tulisModel(nama, lods, bahan, k.tulang.length + ' tulang; klip: ' + (klip.join(', ') || '-'), k, true);
 }
 
 // Bangunan rakitan dari GLB lokal: satu grup per bahan. Nama bahan = kunci pustaka bahan bangunan game (BF.tex.mat:

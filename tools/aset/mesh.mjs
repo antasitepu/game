@@ -140,13 +140,27 @@ export function terbesar(m, comps, jumlah) {
 }
 
 // Kurangi jumlah segitiga sampai kira-kira `target` dengan meshoptimizer (vertex asli dipertahankan, jadi UV/normal tetap sah).
-export function sederhanakan(m, target, flags) {
+// utuh: vertex tidak dipadatkan — hasilnya hanya daftar indeks lain atas vertex yang sama (untuk LOD yang berbagi vertex).
+export function sederhanakan(m, target, flags, utuh) {
   if (jumlahTri(m) <= target) return m;
   const sasaran = Math.max(3, Math.round(target) * 3);
   let [idx] = MS.simplify(m.idx, m.pos, 3, sasaran, 1, flags || []);
   // Sambungan UV menahan penyederhanaan; untuk LOD jauh, izinkan melewatinya (distorsi tekstur tak terlihat dari jauh).
   if (idx.length > sasaran * 1.3) [idx] = MS.simplify(m.idx, m.pos, 3, sasaran, 1, (flags || []).concat('Permissive'));
-  return kompak({ ...m, idx });
+  return utuh ? { ...m, idx } : kompak({ ...m, idx });
+}
+
+// Susun ulang vertex: vertex ke-k hasil = vertex urut[k] semula; indeks ikut dipetakan. `peta[lama]` = nomor barunya.
+export function urutkanVertex(m, urut) {
+  const peta = new Int32Array(urut.length);
+  urut.forEach((lama, k) => { peta[lama] = k; });
+  const ambil = (a, n) => {
+    if (!a) return a;
+    const b = new a.constructor(a.length);
+    urut.forEach((lama, k) => { for (let c = 0; c < n; c++) b[k * n + c] = a[lama * n + c]; });
+    return b;
+  };
+  return { ...m, pos: ambil(m.pos, 3), nor: ambil(m.nor, 3), uv: ambil(m.uv, 2), col: ambil(m.col, 3), sendi: ambil(m.sendi, 4), bobot: ambil(m.bobot, 4), idx: m.idx.map(i => peta[i]), peta };
 }
 
 // Tiap komponen (helai daun / bilah rumput) dijadikan satu kartu 2 segitiga dari empat titik ekstremnya.

@@ -63,8 +63,19 @@
 
   // Tata letak biner per LOD (lihat tools/aset/olah.mjs): pos f32, normal i8, uv f32, warna u8 (sRGB), indeks u16, lalu bila ada
   // kerangka: nomor tulang u8×4 dan bobot u8×4 mulai dari l.kulit; tiap blok rata 4 byte.
+  // LOD dengan `bersama` hanya berisi indeks (u16 mulai dari l.idx): vertexnya milik LOD nomor `bersama`.
   function bangunModel(def, buf, tx, bersama) {
-    const lod = def.lod.map(l => {
+    const lod = [];
+    def.lod.forEach(l => {
+      if (l.bersama !== undefined) {
+        const g = new THREE.BufferGeometry(), asal = lod[l.bersama];
+        for (const nama in asal.attributes) g.setAttribute(nama, asal.attributes[nama]);
+        g.setIndex(new THREE.BufferAttribute(new Uint16Array(buf, l.idx, l.i), 1));
+        for (const [mulai, jumlah, bahan] of l.grup) g.addGroup(mulai, jumlah, bahan);
+        g.boundingSphere = asal.boundingSphere.clone();
+        lod.push(g);
+        return;
+      }
       let o = l.off;
       const pos = new Float32Array(buf, o, l.v * 3); o += l.v * 12;
       const nor = new Int8Array(buf, o, l.v * 3); o += pad4(l.v * 3);
@@ -84,7 +95,7 @@
       }
       for (const [mulai, jumlah, bahan] of l.grup) g.addGroup(mulai, jumlah, bahan);
       g.computeBoundingSphere();
-      return g;
+      lod.push(g);
     });
     const bahan = def.bahan.map(b => {
       if (bersama[b.jenis]) return bersama[b.jenis];
