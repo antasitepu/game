@@ -488,11 +488,11 @@ class Tokoh:
         tabung(bm, [((0, 0.012, 1.475), 0.084, 0.092), ((0, 0.016, 1.408), 0.128, 0.108)], seg=14)         # juntai ke bahu
         self.tambah('tudung', bm, bhn, tim=tim, kaku='Head')
 
-    def jubah(self, bhn):
+    def jubah(self, bhn, tim=False):
         """Jubah pendek di punggung, dari bahu sampai lutut; mengikuti tulang punggung bawah."""
         bm = bmesh.new()
         tabung(bm, [((0, 0.124, 1.40), 0.150, 0.028), ((0, 0.146, 1.20), 0.200, 0.032), ((0, 0.170, 0.90), 0.225, 0.034), ((0, 0.190, 0.56), 0.240, 0.032)], seg=16, n=2.6)
-        self.tambah('jubah', bm, bhn, lebur=(0.008, 260, 0.012), kaku='Spine')
+        self.tambah('jubah', bm, bhn, lebur=(0.008, 260, 0.012), tim=tim, kaku='Spine')
 
     def topi(self, bhn, bulu):
         """Topi bertepi dengan sehelai bulu."""

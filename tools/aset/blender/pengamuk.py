@@ -1,5 +1,5 @@
-# Pengamuk (unit unik wangsa Bara) buatan skrip: badan dan paha telanjang, mantel bulu di bahu, selempang dada
-# (diwarnai tim oleh game), rok dan sepatu kulit berbulu, rambut merah berjambul, kapak di kedua tangan.
+# Pengamuk (unit unik wangsa Bara) buatan skrip: badan dan paha telanjang, mantel bulu di bahu, selempang dada dan rok
+# kain (keduanya diwarnai tim oleh game), sepatu kulit berbulu, rambut merah berjambul, kapak di kedua tangan.
 # Semua pembentuk dan gerak dari manusia.py.
 # Hasil: satu GLB berkerangka (klip diam, jalan, lari, serang, mati) untuk `node tools/aset/olah.mjs pengamuk`:
 # <folder-keluaran>.glb (bawaan tools/aset/sumber/pengamuk.glb) atau --glb, serta pratinjau PNG di <folder-keluaran>.
@@ -30,7 +30,7 @@ T.dada(kulit)
 T.lengan(kulit, dari=0.0)
 T.paha(kulit)
 T.kaki(bulu('sepatu_bulu'), nama='sepatu', tebal=0.012, atas=0.36)
-T.rok(bulu('rok_bulu'), bawah=0.64, tim=False, segitiga=380)
+T.rok(T.kain('rok', linen, 5.0, (0.66, 0.62, 0.55), (0.90, 0.88, 0.82)), bawah=0.64, segitiga=380)   # rok kain: tanda tim yang terlihat dari kamera game
 T.sabuk(samak, juntai=False, lebar=0.026, longgar=0.018, gesper=besi)
 T.mantel(bulu('mantel_bulu'))
 T.selempang(T.kain('selempang', linen, 5.0, (0.72, 0.68, 0.60), (0.94, 0.92, 0.86)))          # putih gading: dikalikan warna tim
