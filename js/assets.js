@@ -1,6 +1,6 @@
 'use strict';
-// Pemuat aset hasil olahan tools/aset: model pindai yang sudah disederhanakan (beberapa LOD), tekstur tanah,
-// dan langit HDRI untuk pantulan. Dimuat sekali sebelum permainan dimulai (butuh server; lihat server.js).
+// Pemuat aset hasil olahan tools/aset: model pindai yang sudah disederhanakan (beberapa LOD), model berkerangka
+// beranimasi, tekstur tanah, dan langit HDRI untuk pantulan. Dimuat sekali sebelum permainan dimulai (butuh server; lihat server.js).
 (function () {
   const assets = BF.assets = { model: {}, tex: {}, bahan: {}, langit: null, matahari: null };
   const DASAR = 'assets/';
@@ -30,7 +30,39 @@
     return m;
   }
 
-  // Tata letak biner per LOD (lihat tools/aset/olah.mjs): pos f32, normal i8, uv f32, warna u8 (sRGB), indeks u16; tiap blok rata 4 byte.
+  // Kerangka & klip animasi model berkerangka (lihat tulisKerangka di tools/aset/olah.mjs). IBM dan klip dipakai bersama
+  // oleh semua objek model itu; tulangnya dibuat per objek lewat assets.kerangkaBaru.
+  const SIFAT = { t: ['position', 3], r: ['quaternion', 4], s: ['scale', 3] };
+  function bangunKerangka(def, buf) {
+    const tulang = def.kerangka.tulang, ibm = tulang.map((_, k) => new THREE.Matrix4().fromArray(new Float32Array(buf, def.kerangka.ibm + k * 64, 16)));
+    const klip = {};
+    for (const nama in def.klip) {
+      const c = def.klip[nama];
+      klip[nama] = new THREE.AnimationClip(nama, c.durasi, c.jalur.map(j => {
+        const [sifat, n] = SIFAT[j.sifat], waktu = new Float32Array(buf, j.off, j.n), nilai = new Float32Array(buf, j.off + j.n * 4, j.n * n);
+        const Jalur = j.sifat === 'r' ? THREE.QuaternionKeyframeTrack : THREE.VectorKeyframeTrack;
+        return new Jalur(tulang[j.tulang].nama + '.' + sifat, waktu, nilai, j.step ? THREE.InterpolateDiscrete : undefined);
+      }));
+    }
+    return { kerangka: { tulang, ibm }, klip };
+  }
+
+  // Tulang baru (pose istirahat) untuk satu objek model berkerangka. Hasil: { akar: [Bone] untuk ditambahkan ke SkinnedMesh, skeleton }.
+  assets.kerangkaBaru = function (model) {
+    const def = model.kerangka.tulang, tulang = def.map(d => {
+      const b = new THREE.Bone();
+      b.name = d.nama;
+      b.position.fromArray(d.t); b.quaternion.fromArray(d.r);
+      if (d.s) b.scale.fromArray(d.s);
+      return b;
+    });
+    const akar = [];
+    def.forEach((d, k) => (d.induk < 0 ? akar.push(tulang[k]) : tulang[d.induk].add(tulang[k])));
+    return { akar, skeleton: new THREE.Skeleton(tulang, model.kerangka.ibm) };
+  };
+
+  // Tata letak biner per LOD (lihat tools/aset/olah.mjs): pos f32, normal i8, uv f32, warna u8 (sRGB), indeks u16, lalu bila ada
+  // kerangka: nomor tulang u8×4 dan bobot u8×4 mulai dari l.kulit; tiap blok rata 4 byte.
   function bangunModel(def, buf, tx, bersama) {
     const lod = def.lod.map(l => {
       let o = l.off;
@@ -46,12 +78,16 @@
       g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
       g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       g.setIndex(new THREE.BufferAttribute(idx, 1));
+      if (l.kulit !== undefined) {
+        g.setAttribute('skinIndex', new THREE.BufferAttribute(new Uint8Array(buf, l.kulit, l.v * 4), 4));
+        g.setAttribute('skinWeight', new THREE.BufferAttribute(new Uint8Array(buf, l.kulit + l.v * 4, l.v * 4), 4, true));
+      }
       for (const [mulai, jumlah, bahan] of l.grup) g.addGroup(mulai, jumlah, bahan);
       g.computeBoundingSphere();
       return g;
     });
     const bahan = def.bahan.map(b => bersama[b.jenis] || new THREE.MeshStandardMaterial({ map: tx[b.peta], normalMap: b.normal ? tx[b.normal] : null, roughness: b.kasar, metalness: 0 }));
-    return { lod, bahan, tinggi: def.tinggi, radius: def.radius };
+    return Object.assign({ lod, bahan, tinggi: def.tinggi, radius: def.radius }, def.kerangka ? bangunKerangka(def, buf) : null);
   }
 
   // Langit: byte RGBE (baris 0 = bawah) → tekstur equirectangular half-float.

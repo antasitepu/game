@@ -1,5 +1,6 @@
 // Operasi geometri untuk alat aset: komponen terhubung, penyederhanaan (meshoptimizer), kartu daun, taburan.
 // Mesh = { pos: Float32Array(3n), nor: Float32Array(3n), uv: Float32Array(2n)|null, col: Float32Array(3n)|null (sRGB 0..1), idx: Uint32Array }
+// Mesh berkerangka menambah sendi: Uint16Array(4n) (nomor tulang) dan bobot: Float32Array(4n); keduanya ikut kompak/gabung/salin.
 import { MeshoptSimplifier as MS } from 'meshoptimizer';
 
 await MS.ready;
@@ -23,15 +24,17 @@ export function kompak(m) {
   let k = 0;
   for (let i = 0; i < m.idx.length; i++) if (peta[m.idx[i]] < 0) peta[m.idx[i]] = k++;
   const pos = new Float32Array(k * 3), nor = new Float32Array(k * 3), uv = m.uv ? new Float32Array(k * 2) : null, col = m.col ? new Float32Array(k * 3) : null;
+  const sendi = m.sendi ? new Uint16Array(k * 4) : null, bobot = m.sendi ? new Float32Array(k * 4) : null;
   for (let i = 0; i < n; i++) {
     const j = peta[i];
     if (j < 0) continue;
     for (let c = 0; c < 3; c++) { pos[j * 3 + c] = m.pos[i * 3 + c]; nor[j * 3 + c] = m.nor[i * 3 + c]; if (col) col[j * 3 + c] = m.col[i * 3 + c]; }
     if (uv) { uv[j * 2] = m.uv[i * 2]; uv[j * 2 + 1] = m.uv[i * 2 + 1]; }
+    if (sendi) for (let c = 0; c < 4; c++) { sendi[j * 4 + c] = m.sendi[i * 4 + c]; bobot[j * 4 + c] = m.bobot[i * 4 + c]; }
   }
   const idx = new Uint32Array(m.idx.length);
   for (let i = 0; i < idx.length; i++) idx[i] = peta[m.idx[i]];
-  return { pos, nor, uv, col, idx };
+  return sendi ? { pos, nor, uv, col, idx, sendi, bobot } : { pos, nor, uv, col, idx };
 }
 
 export function gabung(list) {
@@ -39,12 +42,17 @@ export function gabung(list) {
   const nv = list.reduce((s, m) => s + m.pos.length / 3, 0), ni = list.reduce((s, m) => s + m.idx.length, 0);
   const adaUv = list.some(m => m.uv), adaCol = list.some(m => m.col);
   const out = { pos: new Float32Array(nv * 3), nor: new Float32Array(nv * 3), uv: adaUv ? new Float32Array(nv * 2) : null, col: adaCol ? new Float32Array(nv * 3).fill(1) : null, idx: new Uint32Array(ni) };
+  if (list.some(m => m.sendi)) {
+    if (!list.every(m => m.sendi)) throw new Error('tidak bisa menggabung mesh berkerangka dengan mesh tanpa kerangka');
+    out.sendi = new Uint16Array(nv * 4); out.bobot = new Float32Array(nv * 4);
+  }
   let v = 0, i = 0;
   for (const m of list) {
     out.pos.set(m.pos, v * 3);
     out.nor.set(m.nor || new Float32Array(m.pos.length), v * 3);
     if (m.uv) out.uv.set(m.uv, v * 2);
     if (m.col) out.col.set(m.col, v * 3);
+    if (m.sendi) { out.sendi.set(m.sendi, v * 4); out.bobot.set(m.bobot, v * 4); }
     for (let k = 0; k < m.idx.length; k++) out.idx[i + k] = m.idx[k] + v;
     v += m.pos.length / 3; i += m.idx.length;
   }
@@ -68,7 +76,7 @@ export function putarY(m, sudut) {
   return m;
 }
 
-export const salin = m => ({ pos: m.pos.slice(), nor: m.nor.slice(), uv: m.uv ? m.uv.slice() : null, col: m.col ? m.col.slice() : null, idx: m.idx.slice() });
+export const salin = m => ({ pos: m.pos.slice(), nor: m.nor.slice(), uv: m.uv ? m.uv.slice() : null, col: m.col ? m.col.slice() : null, idx: m.idx.slice(), ...(m.sendi ? { sendi: m.sendi.slice(), bobot: m.bobot.slice() } : {}) });
 
 // Potong mesh dengan bidang: bagian yang memenuhi n·p ≤ d dipertahankan. Segitiga yang terpotong dibelah, atributnya diinterpolasi.
 export function potong(m, n, d) {
@@ -122,7 +130,7 @@ export function komponen(m) {
 export function ambilTri(m, tris) {
   const idx = new Uint32Array(tris.length * 3);
   for (let k = 0; k < tris.length; k++) { const t = tris[k] * 3; idx[k * 3] = m.idx[t]; idx[k * 3 + 1] = m.idx[t + 1]; idx[k * 3 + 2] = m.idx[t + 2]; }
-  return kompak({ pos: m.pos, nor: m.nor, uv: m.uv, col: m.col, idx });
+  return kompak({ ...m, idx });
 }
 
 // Hanya komponen-komponen terbesar (batang & dahan utama; ranting kecil dibuang).
@@ -138,7 +146,7 @@ export function sederhanakan(m, target, flags) {
   let [idx] = MS.simplify(m.idx, m.pos, 3, sasaran, 1, flags || []);
   // Sambungan UV menahan penyederhanaan; untuk LOD jauh, izinkan melewatinya (distorsi tekstur tak terlihat dari jauh).
   if (idx.length > sasaran * 1.3) [idx] = MS.simplify(m.idx, m.pos, 3, sasaran, 1, (flags || []).concat('Permissive'));
-  return kompak({ pos: m.pos, nor: m.nor, uv: m.uv, col: m.col, idx });
+  return kompak({ ...m, idx });
 }
 
 // Tiap komponen (helai daun / bilah rumput) dijadikan satu kartu 2 segitiga dari empat titik ekstremnya.
