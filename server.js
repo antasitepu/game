@@ -1,7 +1,7 @@
 'use strict';
 // Server Benteng Fajar (tanpa dependency):
 //   1. menyajikan file game (index.html, /js, /css, /assets)
-//   2. relay WebSocket untuk multiplayer: meneruskan pesan antara dua pemain dalam satu ruangan
+//   2. relay WebSocket untuk multiplayer: meneruskan pesan antarpemain (2–4) dalam satu ruangan
 // Jalankan: node server.js   (opsi: PORT=8080 HOST=0.0.0.0)
 // Server tidak menjalankan logika game dan tidak menyimpan data apa pun.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
@@ -14,6 +14,7 @@ const CODE = ['.html', '.js', '.css'];   // jenis file yang boleh diambil dari l
 const MAX_MSG = 32 * 1024;   // byte per pesan
 const MAX_CONN = 400;
 const MAX_ROOMS = 200;
+const ROOM_MAX = 4;          // klien per ruangan
 const RATE = 150;            // pesan per detik per koneksi
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
@@ -53,12 +54,22 @@ function sendFrame(c, op, payload) {
 }
 const send = (c, obj) => sendFrame(c, 0x1, Buffer.from(JSON.stringify(obj)));
 
+// Ruangan: clients[slot] (slot 0 = tuan rumah). Di lobi (belum dikunci) ruangan milik tuan rumah: bila ia keluar, ruangan
+// ditutup untuk semua. Tamu yang keluar dari lobi, atau siapa pun yang keluar setelah permainan dimulai, hanya
+// mengosongkan slotnya; klien lain diberi tahu slot mana yang pergi dan ruangan bertahan sampai kosong.
 function leaveRoom(c) {
   const room = c.room;
   if (!room) return;
   c.room = null;
-  rooms.delete(room.code);
-  for (const o of room.clients) if (o && o !== c) { o.room = null; send(o, { t: 'left' }); }
+  const slot = room.clients.indexOf(c);
+  if (!room.started && slot === 0) {
+    rooms.delete(room.code);
+    for (const o of room.clients) if (o && o !== c) { o.room = null; send(o, { t: 'left', slot: 0, closed: true }); }
+    return;
+  }
+  room.clients[slot] = null;
+  if (!room.clients.some(Boolean)) { rooms.delete(room.code); return; }
+  for (const o of room.clients) if (o) send(o, { t: 'left', slot });
 }
 
 function drop(c) {
@@ -85,22 +96,29 @@ function onMessage(c, text) {
     if (c.room) return;
     const code = rooms.size < MAX_ROOMS ? newCode() : null;
     if (!code) { send(c, { t: 'error', m: 'Server penuh, coba lagi nanti' }); return; }
-    c.room = { code, clients: [c, null] };
+    c.room = { code, clients: [c].concat(new Array(ROOM_MAX - 1).fill(null)), started: false };
     rooms.set(code, c.room);
-    send(c, { t: 'room', code });
+    send(c, { t: 'room', code, slot: 0 });
   } else if (m.t === 'join') {
     if (c.room) return;
     const room = rooms.get(String(m.code || '').toUpperCase().slice(0, 8));
-    if (!room || room.clients[1]) { send(c, { t: 'error', m: 'Ruangan tidak ditemukan atau sudah penuh' }); return; }
-    room.clients[1] = c;
+    const slot = room && !room.started ? room.clients.indexOf(null) : -1;
+    if (slot < 0) { send(c, { t: 'error', m: 'Ruangan tidak ditemukan, sudah penuh, atau permainannya sudah dimulai' }); return; }
+    const here = [];
+    room.clients.forEach((o, i) => { if (o) here.push(i); });
+    room.clients[slot] = c;
     c.room = room;
-    send(c, { t: 'joined', code: room.code });
-    send(room.clients[0], { t: 'peer' });
+    send(c, { t: 'joined', code: room.code, slot, here });
+    for (const i of here) send(room.clients[i], { t: 'peer', slot });
+  } else if (m.t === 'lock') {
+    // tuan rumah memulai permainan: ruangan tidak menerima pemain baru lagi
+    if (c.room && c.room.clients[0] === c) c.room.started = true;
   } else if (m.t === 'msg') {
+    // diteruskan ke semua klien lain; slot pengirim diisi server (tidak bisa dipalsukan klien)
     const room = c.room;
     if (!room || m.d === undefined) return;
-    const other = room.clients[0] === c ? room.clients[1] : room.clients[0];
-    if (other) send(other, { t: 'msg', d: m.d });
+    const from = room.clients.indexOf(c);
+    for (const o of room.clients) if (o && o !== c) send(o, { t: 'msg', d: m.d, from });
   }
 }
 

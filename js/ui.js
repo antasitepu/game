@@ -369,7 +369,15 @@
       else if (e.type === 'tech' && e.owner === me) hud.toast('Riset selesai: ' + BF.TECHS[e.tech].name);
       else if (e.type === 'repairStop' && e.owner === me) hud.toast('Perbaikan berhenti: ' + ERR.res.toLowerCase());
       else if (e.type === 'garrisonFull' && e.owner === me) hud.toast('Bangunan penuh');
-      else if (e.type === 'defeat') hud.toast(`${s.players[e.pid].name} (${BF.SLOTS[e.pid].label}) ${e.resigned ? 'menyerah' : 'tumbang'}.`);
+      else if (e.type === 'defeat') {
+        hud.toast(`${s.players[e.pid].name} (${BF.SLOTS[e.pid].label}) ${e.resigned ? 'menyerah' : 'tumbang'}.`);
+        if (e.pid === me && s.mp) {                         // daring: kita tumbang sementara yang lain masih bermain →
+          BF.net.close();                                   // permainan selesai di layar ini saja; yang lain melanjutkan
+          s.over = true;
+          s.winner = -1;
+          hud.showEnd(s, e.resigned ? me : undefined);
+        }
+      }
       else if (e.type === 'over') hud.showEnd(s, e.resigned);
     }
     s.events.length = 0;

@@ -43,7 +43,7 @@
     BF.audio.unlock();
     const s = game.s = opts.state || BF.newGame({
       difficulty: opts.difficulty, factions: opts.factions, players: opts.players, seed: opts.seed, mp: opts.mp, human: opts.human,
-      ai: opts.mp ? [false, false] : BF.SLOTS.map((q, i) => i > 0),
+      ai: BF.SLOTS.map((q, i) => !opts.mp && i > 0),
     });
     game.running = true;
     game.menuOpen = false;
