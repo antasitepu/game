@@ -14,6 +14,9 @@
     const dpr = game.dpr = window.devicePixelRatio || 1, mm = $('minimap'), f = $('fx');
     game.w = window.innerWidth;
     game.h = window.innerHeight;
+    // bagian layar yang tertutup HUD: bar atas, dan di bawah — panel penuh (layar biasa) atau hanya setinggi kotak info
+    // (layar pendek: panel melayang, peta terlihat di sela-selanya)
+    BF.ui.inset = { top: $('topbar').offsetHeight, bottom: window.matchMedia('(max-height: 540px)').matches ? $('info').offsetHeight + 12 : $('bottom').offsetHeight };
     BF.gfx.resize(game.w, game.h, dpr);
     f.width = Math.round(game.w * dpr);
     f.height = Math.round(game.h * dpr);

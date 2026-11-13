@@ -7,7 +7,7 @@ const { spawn } = require('child_process');
 const http = require('http'), path = require('path'), zlib = require('zlib'), crypto = require('crypto');
 const { sleep } = require('../cdp');
 
-module.exports = async ({ page, check, root }) => {
+module.exports = async ({ blank, check, root }) => {
   const PORT = 8990 + (process.pid % 9), host = '127.0.0.1:' + PORT, base = 'http://' + host;
   const env = Object.assign({}, process.env, { PORT: String(PORT), HOST: '127.0.0.1', STALL_MS: '1500', IDLE_MS: '2500', LOBBY_MS: '4000', ROOMS_PER_IP_PER_MIN: '4', MAX_CONN_PER_IP: '8', RECONNECT_MS: '3000' });
   const srv = spawn(process.execPath, [path.join(root, 'server.js')], { env, stdio: 'ignore' });
@@ -166,7 +166,7 @@ module.exports = async ({ page, check, root }) => {
     check('setelah ditutup, alamat itu bisa tersambung lagi', (JSON.parse((await get('/healthz')).body.toString())).conns === 0 && !!(await open().then(c => { if (c) c.close(); return c; })));
 
     // ---- halaman sungguhan: tidak ada pelanggaran CSP saat memuat dan bermain
-    const p = await page('about:blank');
+    const p = await blank();
     await p.send('Page.addScriptToEvaluateOnNewDocument', { source: `window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ← ' + e.blockedURI));` });
     await p.send('Page.navigate', { url: base + '/' });
     for (let i = 0; i < 100 && !(await p.ev('!!(window.BF && BF.game && BF.game.ready)').catch(() => false)); i++) await sleep(100);

@@ -237,3 +237,56 @@ td:first-child { color: #f4dfa0; font-weight: 600; white-space: nowrap; }
   .res small, #clock { display: none; }
   #topbar { gap: 10px; }
 }
+
+/* ---------- layar pendek (ponsel mendatar): HUD ringkas yang melayang di atas peta ---------- */
+#rotate { display: none; }
+@media (max-height: 540px) {
+  #topbar { height: 32px; gap: 8px; padding: 0 8px; }
+  .res { gap: 4px; }
+  .res small, #clock, #btn-speed, #btn-pause, #btn-help { display: none; }
+  .res span { min-width: 24px; font-size: 13px; }
+  #era { padding: 1px 8px; font-size: 12px; }
+  .tb { height: 26px; padding: 0 9px; }
+  #toast { top: 40px; }
+  #net-wait { top: 78px; }
+  /* panel bawah: tiga kotak terpisah (minimap, info, perintah); sisanya tembus pandang dan tidak menangkap sentuhan */
+  #bottom { height: auto; padding: 6px; gap: 6px; align-items: flex-end; background: none; border: 0; pointer-events: none; }
+  #bottom > * { pointer-events: auto; }
+  #minimap { width: 112px; height: 112px; }
+  #info { height: 76px; padding: 5px 9px; gap: 8px; background: rgba(35, 27, 19, .92); }
+  #portrait, .bonus, .hint { display: none; }
+  .name { font-size: 13px; gap: 8px; }
+  .hp { height: 12px; margin: 3px 0; width: min(200px, 100%); }
+  .hp span { font-size: 10px; line-height: 10px; }
+  .stats { gap: 9px; font-size: 11px; flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+  .status { margin-top: 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .group, .queue { margin-top: 3px; gap: 4px; flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+  .group span, .q { padding: 2px 6px; font-size: 11px; }
+  #cmds { grid-template-columns: repeat(4, 46px); grid-auto-rows: 46px; gap: 3px; padding: 4px; background: rgba(35, 27, 19, .92); border: 1px solid #4f3f27; border-radius: 8px; }
+  .glyph { font-size: 20px; }
+  /* kartu menu: boleh digulir, lebih rapat */
+  .overlay { align-items: flex-start; padding: 8px; overflow-y: auto; }
+  .card { max-height: none; padding: 14px 18px; }
+  .card.start { padding: 12px 16px; }
+  h1 { font-size: 26px; margin-bottom: 2px; }
+  .tagline { margin-bottom: 8px; }
+  .card.start .tagline { margin-bottom: 8px; }
+  .faction-info { min-height: 0; margin: 6px 0 10px; }
+  .primary { height: 40px; }
+}
+/* perangkat sentuh: huruf tombol pintas tidak berguna */
+@media (pointer: coarse) {
+  .key, .tt-key { display: none; }
+  #minimap { cursor: default; }
+}
+/* ponsel dipegang tegak: layar terlalu sempit untuk bermain */
+@media (orientation: portrait) and (max-width: 600px) {
+  #rotate { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font-size: 16px; font-weight: 600; color: #f4dfa0; background: #14100b; }
+}
+
+/* ---------- layar sentuh ---------- */
+html, body { overscroll-behavior: none; touch-action: manipulation; }
+#game, #minimap { touch-action: none; }
+/* tombol batal pilihan: hanya setelah layar benar-benar disentuh (kelas .sentuh dipasang input.js) */
+#btn-desel { display: none; flex: none; align-self: flex-start; width: 30px; padding: 0; font-weight: 700; }
+body.sentuh #btn-desel { display: block; }

@@ -82,6 +82,7 @@
           icon: ['building', t], title: 'Bangun ' + d.name, cost: d.cost, desc: d.desc,
           locked: p.era < d.era ? eraName(d.era) : null, poor: !BF.canAfford(p, d.cost), active: ui.placing === t,
           action() {
+            if (ui.placing === t) { ui.placing = null; ui.wallStart = null; ui.ghosts = []; return; }      // tekan lagi = batal
             if (p.era < d.era) return hud.fail('Butuh ' + eraName(d.era));
             if (!BF.canAfford(p, d.cost)) return hud.fail(ERR.res);
             ui.placing = t;
@@ -101,7 +102,7 @@
       slots[4] = {
         glyph: '⚔', title: 'Gerak-Serang', active: ui.amove,
         desc: 'Lalu klik kiri pada peta: pasukan bergerak ke sana sambil menyerang musuh yang ditemui.',
-        action() { ui.amove = true; ui.garrison = ui.patrol = false; ui.placing = null; },
+        action() { ui.amove = !ui.amove; ui.garrison = ui.patrol = false; ui.placing = null; },
       };
       slots[5] = stop;
       slots[6] = {
@@ -112,7 +113,7 @@
       slots[7] = {
         glyph: '⇄', title: 'Patroli', active: ui.patrol,
         desc: 'Lalu klik kiri pada peta: pasukan berjalan bolak-balik antara posisinya sekarang dan titik itu sambil menyerang musuh yang ditemui.',
-        action() { ui.patrol = true; ui.amove = ui.garrison = false; ui.placing = null; },
+        action() { ui.patrol = !ui.patrol; ui.amove = ui.garrison = false; ui.placing = null; },
       };
       // sikap: tombol menyala bila semua unit tempur (dan Tabib) terpilih memakai sikap itu; bila yang terpilih hanya
       // Tabib, keterangannya memakai arti sikap bagi penyembuh
@@ -516,6 +517,7 @@
     // Multiplayer: tampilkan "menunggu" hanya bila macet lebih dari setengah detik.
     // keterangan menunggu di permainan daring: koneksi kita sendiri putus, menunggu pemain yang terputus (dengan sisa
     // waktunya), atau sekadar menunggu paket pemain lain
+    $('btn-desel').classList.toggle('hidden', !ui.sel.length);
     const net = BF.net, awayPid = net.active ? net.away.findIndex((t, pid) => t > 0 && !s.players[pid].out) : -1;
     if (!net.waiting) hud.waitSince = 0; else if (!hud.waitSince) hud.waitSince = now;
     const wait = net.lost ? 'Koneksi terputus — menyambung ulang…'

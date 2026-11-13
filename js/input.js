@@ -4,9 +4,12 @@
 (function () {
   const N = BF.MAP_SIZE, U = BF.UNITS, B = BF.BUILDINGS, idx = BF.idx, view = BF.view;
   const ui = BF.ui, hud = BF.hud;
-  const TOP = 40, BOTTOM = 188, PAN = 900, MAX_WALL = 60;
+  const PAN = 900, MAX_WALL = 60;
+  // tinggi bar atas dan panel bawah (px); diukur ulang tiap ukuran layar berubah (main.js)
+  ui.inset = { top: 40, bottom: 188 };
   const keys = {};
   let lastClick = { id: 0, t: 0 }, lastGroup = { k: '', t: 0 }, rotating = null;
+  const TWIST = 1;           // arah putaran kamera terhadap puntiran dua jari (tanah mengikuti jari)
 
   const input = BF.input = {};
   const game = () => BF.game;
@@ -14,7 +17,7 @@
   const idsOf = list => list.map(e => e.id);
   const isBig = u => U[u.type].cls === 'cavalry' || U[u.type].cls === 'siege';
   // pusat area peta yang tidak tertutup bar atas / panel bawah
-  const midY = () => TOP + (game().h - TOP - BOTTOM) / 2;
+  const midY = () => ui.inset.top + (game().h - ui.inset.top - ui.inset.bottom) / 2;
 
   // Titik tanah di tengah area pandang harus tetap berada di dalam peta.
   const clampCam = () => view.clampAt(game().w / 2, midY());
@@ -163,7 +166,7 @@
     if (!ownUnits(s).some(u => cls.indexOf(U[u.type].cls) >= 0)) return hud.fail('Unit ini tidak bisa berlindung');
     endPlacing(false);
     ui.amove = ui.patrol = false;
-    ui.garrison = true;
+    ui.garrison = !ui.garrison;                           // tekan lagi = batal
   };
 
   // Mode patroli: klik kiri pada peta menentukan ujung rute yang satunya.
@@ -271,7 +274,7 @@
       ui.select(idsOf(s.units.filter(u => {
         if (u.owner !== s.human || u.type !== e.type) return false;
         const p = view.toScreen(u.x, u.y, 0.4);
-        return p.x >= 0 && p.x <= g.w && p.y >= TOP && p.y <= g.h - BOTTOM + 40;
+        return p.x >= 0 && p.x <= g.w && p.y >= ui.inset.top && p.y <= g.h - ui.inset.bottom + 40;
       })));
     } else if (shift && e.owner === s.human && e.kind === 'unit') {
       const i = ui.sel.indexOf(e.id);
@@ -383,7 +386,113 @@
     g.canvas.style.cursor = rotating ? 'grabbing' : ui.placing ? 'copy' : ui.amove || ui.patrol ? 'crosshair' : ui.garrison ? 'alias' : 'default';
   };
 
+  // ---------------------------------------------------------------- layar sentuh
+
+  // Satu jari — ketuk: memilih, atau memberi perintah bila sudah ada unit terpilih (pengganti klik kanan); seret:
+  // menggeser kamera; tekan lama lalu seret: kotak seleksi (tekan lama tanpa menyeret pada unit sendiri: pilih semua
+  // yang sejenis di layar). Dua jari — cubit: zoom, putar: memutar kamera, seret: menggeser. Saat sebuah mode aktif
+  // (menempatkan bangunan/tembok, gerak-serang, patroli, berlindung) sentuhan menjalankan mode itu seperti klik kiri.
+  const TAP_PX = 10, HOLD_MS = 350;
+  let finger = null;         // { id, x0, y0, x, y, mode: 'tunggu' | 'geser' | 'kotak' | 'pasang' | 'aksi', timer }
+  let pinch = null;          // { d, a, cx, cy }: jarak, sudut, dan titik tengah dua jari pada peristiwa sebelumnya
+  let lifting = false;       // sesudah gerakan dua jari: abaikan jari yang tersisa sampai semuanya terangkat
+
+  // Ketukan: bila ada unit terpilih, ketuk tanah/musuh/sumber daya = perintah. Mengetuk milik sendiri = memilihnya,
+  // kecuali ada perintah yang jelas untuknya (pekerja → bangunan yang belum jadi/rusak/ladang/tempat setor, Tabib → unit
+  // terluka). Bangunan terpilih + ketuk tanah = titik kumpul.
+  function tap(s, x, y) {
+    const t = targetAt(s, x, y), e = t.e, me = s.human, units = ownUnits(s);
+    if (!units.length) {
+      const b = ui.entities(s)[0];
+      if (!e && b && b.kind === 'building' && b.owner === me && b.built) command(s, t, false);
+      else clickSelect(s, x, y, false);
+      return;
+    }
+    if (e && e.owner === me) {
+      const workers = units.filter(u => u.type === 'worker');
+      const useful = e.kind === 'building'
+        ? workers.length > 0 && (!e.built || e.type === 'farm' || e.hp < BF.bldDef(s, e).hp || (B[e.type].dropoff && workers.some(u => u.carry > 0)))
+        : e.kind === 'unit' && units.some(u => BF.canHeal(s, u, e)) && e.hp < BF.unitDef(s, e).hp;
+      if (!useful) { clickSelect(s, x, y, false); return; }
+    }
+    command(s, t, false);
+  }
+
+  const two = ts => { const a = ts[0], b = ts[1], dx = b.clientX - a.clientX, dy = b.clientY - a.clientY; return { d: Math.max(1, Math.hypot(dx, dy)), a: Math.atan2(dy, dx), cx: (a.clientX + b.clientX) / 2, cy: (a.clientY + b.clientY) / 2 }; };
+  const dropFinger = () => { if (finger) clearTimeout(finger.timer); finger = null; ui.drag = null; };
+
+  function touchStart(e, canvas) {
+    const g = game(), s = g.s;
+    e.preventDefault();                                   // tanpa peristiwa tetikus tiruan dan gerak bawaan peramban
+    document.body.classList.add('sentuh');
+    ui.touch = true;
+    if (!s || !g.running || s.over) return;
+    view.update();
+    if (e.touches.length >= 2) { dropFinger(); ui.wallStart = null; pinch = two(e.touches); lifting = true; return; }
+    if (lifting) return;
+    const t = e.touches[0], m = ui.mouse, w = view.toWorld(t.clientX, t.clientY);
+    m.x = t.clientX; m.y = t.clientY; m.inside = false; m.onMap = true;
+    finger = { id: t.identifier, x0: t.clientX, y0: t.clientY, x: t.clientX, y: t.clientY, mode: 'tunggu', timer: 0 };
+    if (ui.placing === 'wall') { finger.mode = 'pasang'; ui.wallStart = { x: Math.floor(w.x), y: Math.floor(w.y) }; ui.ghosts = wallGhosts(s, w.x, w.y); }
+    else if (ui.placing) { finger.mode = 'pasang'; ui.ghosts = [ghostAt(s, w.x, w.y)]; }
+    else if (ui.amove || ui.garrison || ui.patrol) finger.mode = 'aksi';
+    else finger.timer = setTimeout(() => { if (finger && finger.mode === 'tunggu') { finger.mode = 'kotak'; ui.drag = { x0: finger.x0, y0: finger.y0, x1: finger.x, y1: finger.y }; } }, HOLD_MS);
+  }
+
+  function touchMove(e) {
+    const g = game();
+    e.preventDefault();
+    if (!g.s || !g.running) return;
+    view.update();
+    if (pinch && e.touches.length >= 2) {
+      const q = two(e.touches);
+      let da = q.a - pinch.a;
+      da = ((da + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+      view.panPx(pinch.cx - q.cx, pinch.cy - q.cy);       // tanah mengikuti titik tengah kedua jari…
+      clampCam();
+      zoomAt(q.cx, q.cy, pinch.d / q.d);                  // …menjauh/mendekat sesuai cubitan…
+      if (Math.abs(da) > 0.004) rotateBy(TWIST * da);     // …dan berputar mengikuti puntiran
+      pinch = q;
+      return;
+    }
+    if (!finger) return;
+    const t = [...e.touches].find(q => q.identifier === finger.id);
+    if (!t) return;
+    const dx = t.clientX - finger.x, dy = t.clientY - finger.y, m = ui.mouse;
+    finger.x = m.x = t.clientX; finger.y = m.y = t.clientY;
+    if (finger.mode === 'tunggu' && Math.hypot(finger.x - finger.x0, finger.y - finger.y0) > TAP_PX) { clearTimeout(finger.timer); finger.mode = 'geser'; }
+    if (finger.mode === 'geser') { view.panPx(-dx, -dy); clampCam(); }
+    else if (finger.mode === 'kotak') { ui.drag.x1 = finger.x; ui.drag.y1 = finger.y; }
+  }
+
+  function touchEnd(e) {
+    const g = game(), s = g.s;
+    e.preventDefault();
+    if (e.touches.length < 2) pinch = null;
+    if (lifting) { if (!e.touches.length) lifting = false; return; }
+    const f = finger;
+    if (!f || [...e.touches].some(q => q.identifier === f.id)) return;
+    dropFinger();
+    if (!s || !g.running || s.over || e.type === 'touchcancel') { ui.wallStart = null; return; }
+    view.update();
+    const w = view.toWorld(f.x, f.y), moved = Math.hypot(f.x - f.x0, f.y - f.y0) > TAP_PX;
+    if (f.mode === 'tunggu') tap(s, f.x, f.y);
+    else if (f.mode === 'kotak') {
+      if (moved) boxSelect(s, { x0: f.x0, y0: f.y0, x1: f.x, y1: f.y }, false);
+      else { clickSelect(s, f.x, f.y, false); clickSelect(s, f.x, f.y, false); }      // tekan lama di tempat = klik ganda
+    } else if (f.mode === 'pasang') {
+      if (ui.wallStart) { ui.ghosts = wallGhosts(s, w.x, w.y); placeWall(s, false); }
+      else { ui.ghosts = [ghostAt(s, w.x, w.y)]; place(s, false); }
+      ui.mouse.onMap = false;                             // bayangan penempatan tidak tertinggal di tempat jari terakhir
+    } else if (f.mode === 'aksi' && !moved) {
+      if (ui.amove) attackMove(s, targetAt(s, f.x, f.y));
+      else if (ui.garrison) garrisonAt(s, targetAt(s, f.x, f.y));
+      else if (ui.patrol) patrolTo(s, w);
+    }
+  }
+
   input.init = function (canvas, minimap) {
+    for (const [name, fn] of [['touchstart', touchStart], ['touchmove', touchMove], ['touchend', touchEnd], ['touchcancel', touchEnd]]) canvas.addEventListener(name, fn, { passive: false });
     canvas.addEventListener('mousedown', e => {
       const g = game(), s = g.s;
       if (!s || !g.running || s.over) return;
@@ -452,5 +561,11 @@
     });
     window.addEventListener('mousemove', e => { if (panning) { const w = mmWorld(e); input.centerOn(w.x, w.y); } });
     window.addEventListener('mouseup', () => { panning = false; });
+    // layar sentuh tidak punya klik kanan: tombol ✕ di kotak info membatalkan pilihan dan mode yang sedang aktif
+    document.getElementById('btn-desel').addEventListener('click', () => { endPlacing(false); ui.amove = ui.garrison = ui.patrol = false; ui.select([]); });
+    // sentuh: menyentuh atau menyeret di minimap memindahkan kamera
+    const mmTouch = e => { e.preventDefault(); const s = game().s; if (!s || s.over || !e.touches.length) return; const w = mmWorld(e.touches[0]); input.centerOn(w.x, w.y); };
+    minimap.addEventListener('touchstart', mmTouch, { passive: false });
+    minimap.addEventListener('touchmove', mmTouch, { passive: false });
   };
 })();

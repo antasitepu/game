@@ -33,6 +33,12 @@ const names = process.argv.slice(2).length ? process.argv.slice(2) : fs.readdirS
         for (let i = 0; i < 100 && !(await p.ev('!!(window.BF && BF.game && BF.game.ready)')); i++) await sleep(100);
         return p;
       },
+      // halaman kosong (tanpa menunggu game): untuk skenario yang mengatur emulasi perangkat dulu, baru membuka game
+      async blank() {
+        const p = await browser.page('about:blank');
+        pages.push(p);
+        return p;
+      },
       check(label, ok, detail) {
         ok ? pass++ : fail++;
         console.log((ok ? 'PASS ' : 'FAIL ') + label + (detail !== undefined ? '  → ' + JSON.stringify(detail) : ''));
