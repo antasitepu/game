@@ -52,7 +52,9 @@ Unit butuh animasi (diam, jalan, lari, bekerja, menyerang, mati). Perintah dijal
 
 **Yang dipakai sekarang: semuanya lewat skrip Blender, gratis dan tanpa akun.** Pustaka `tools/aset/blender/manusia.py`
 membangun tubuh, pakaian, atlas tekstur (warna + bayangan lembut, dan peta kekasaran/logam bila ada besi), kerangka 21
-tulang, bobot, dan klip gerak. Tiap unit punya skrip pendek yang memilih pakaian, perlengkapan, dan klipnya:
+tulang, bobot, dan klip gerak. Tiap unit punya skrip pendek yang memilih pakaian, perlengkapan, dan klipnya. Unit berkuda
+memakai `kuda.py` juga: kuda dan penunggang menjadi satu mesh dan satu kerangka (40 tulang; 19 tulang kuda berawalan
+`Horse`, tulang penunggang di bawah `HorseSpine`):
 
 | Unit | Skrip | Klip |
 |---|---|---|
@@ -63,6 +65,8 @@ tulang, bobot, dan klip gerak. Tiap unit punya skrip pendek yang memilih pakaian
 | `pemanah` | `pemanah.py` | diam, jalan, lari, serang (memanah; tali dilepas di 0,58 detik), mati |
 | `pemburu` | `pemburu.py` | sama dengan pemanah |
 | `pengamuk` | `pengamuk.py` | diam, jalan, lari, serang (dua hantaman kapak: 0,29 dan 0,46 detik), mati |
+| `penunggang` | `penunggang.py` + `kuda.py` | diam, jalan, lari (derap cepat), serang (tusukan dari pelana, kena di 0,35 detik), mati |
+| `pemanah_kuda` | `pemanah_kuda.py` + `kuda.py` | diam, jalan, lari, serang (memanah dari pelana, lepas di 0,58 detik), mati |
 
 1. `blender -b --factory-startup --python tools/aset/blender/<unit>.py -- tools/aset/sumber/<unit>`
    Hasilnya `tools/aset/sumber/<unit>.glb` (berkerangka dan beranimasi) serta pratinjau PNG di folder itu, termasuk

@@ -1,4 +1,4 @@
-# Pustaka unit manusia buatan skrip (dipakai pekerja.py, tombak.py, dan unit manusia berikutnya):
+# Pustaka unit manusia buatan skrip (dipakai skrip tiap unit: pekerja.py, tombak.py, …; unit berkuda menambah kuda.py):
 #   Tokoh   membangun tubuh, pakaian, dan perlengkapan; memanggang warna + bayangan lembut (AO) + kekasaran/logam ke atlas;
 #           memasang kerangka & bobot; merekam klip gerak; mengekspor GLB berkerangka untuk tools/aset/olah.mjs.
 #   Peraga  pemeraga gerak (FK + IK kaki/lengan), dan fungsi klip: diam, jalan, kerja, lempar, mati, siaga, tusuk, …
@@ -76,7 +76,7 @@ class Tokoh:
         self.sc, self.nama, self.keluar = bpy.context.scene, nama, os.path.abspath(keluar)
         self.teks = os.path.abspath(teks) if teks else os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'sumber')
         os.makedirs(self.keluar, exist_ok=True)
-        self.bagian, self.catatan, self.info = [], [], {}
+        self.bagian, self.catatan, self.info, self.geser = [], [], {}, Vector((0, 0, 0))
         self.awan = bpy.data.textures.new('awan', 'CLOUDS')
         self.awan.noise_scale = 0.11
         self.LENGAN = {}
@@ -90,6 +90,13 @@ class Tokoh:
         """Titik tengah telapak tangan pada pose istirahat (tempat alat/senjata digenggam)."""
         S, d, _ = self.LENGAN[k]
         return S + d * 0.59
+
+    def pindah(self, geser):
+        """Geser semua bagian yang sudah dibuat (tokoh manusia) ke tempat lain, mis. ke atas pelana; kerangkanya ikut."""
+        self.geser = self.geser + Vector(geser)
+        for b in self.bagian:
+            for v in b['ob'].data.vertices:
+                v.co += Vector(geser)
 
     # ---- bahan (sebelum dipanggang)
     def tekstur(self, nama):
@@ -497,8 +504,14 @@ class Tokoh:
         self.tambah('bulu_topi', bm, bulu, kaku='Head')
 
     # ---- rakit: gabung, kaki ke z = 0, atlas, panggang
-    def rakit(self, ukuran=1024):
-        sc, B = self.sc, self.bagian
+    def rakit(self, ukuran=1024, pisah=()):
+        """pisah: nama bagian yang dijauhkan selama pemanggangan AO (mis. kuda, supaya kaki penunggang yang pada pose
+        istirahat menembus badannya tidak saling menggelapkan); sesudahnya dikembalikan."""
+        sc, B, JAUH = self.sc, self.bagian, Vector((6, 0, 0))
+        for b in B:
+            if b['nama'] in pisah:
+                for v in b['ob'].data.vertices:
+                    v.co += JAUH
         self.info['segitiga'] = {b['nama']: sum(len(p.vertices) - 2 for p in b['ob'].data.polygons) for b in B}
         for i, b in enumerate(B):                           # tiap verteks mengingat bagian asalnya (dipakai saat memberi bobot)
             me = b['ob'].data
@@ -605,11 +618,11 @@ class Tokoh:
             tx.image = g_warna
             nt.links.new(tx.outputs['Color'], b.inputs['Base Color'])
             if g_orm:
-                to, pisah = nt.nodes.new('ShaderNodeTexImage'), nt.nodes.new('ShaderNodeSeparateColor')
+                to, urai = nt.nodes.new('ShaderNodeTexImage'), nt.nodes.new('ShaderNodeSeparateColor')
                 to.image = g_orm
-                nt.links.new(to.outputs['Color'], pisah.inputs['Color'])
-                nt.links.new(pisah.outputs['Green'], b.inputs['Roughness'])
-                nt.links.new(pisah.outputs['Blue'], b.inputs['Metallic'])
+                nt.links.new(to.outputs['Color'], urai.inputs['Color'])
+                nt.links.new(urai.outputs['Green'], b.inputs['Roughness'])
+                nt.links.new(urai.outputs['Blue'], b.inputs['Metallic'])
             self.akhir.append(m)
         me.materials.clear()
         for m in self.akhir:
@@ -617,12 +630,16 @@ class Tokoh:
         for p, i in zip(me.polygons, kelas):
             p.material_index = i
         me.uv_layers.remove(me.uv_layers['asal'])
+        for i in self.di(*pisah):
+            me.vertices[i].co -= JAUH
         self.info['logam'] = bool(g_orm)
 
     di = lambda self, *nama: [i for i, n in enumerate(self.asal) if n in nama]
 
     # ---- pratinjau diam
-    def pratinjau(self):
+    def _studio(self):
+        if getattr(self, 'kam', None):
+            return
         sc = self.sc
         sc.render.engine = 'BLENDER_EEVEE'
         sc.view_settings.view_transform = 'Standard'
@@ -634,23 +651,39 @@ class Tokoh:
         surya.data.energy, surya.data.angle = 2.6, rad(8)
         surya.rotation_euler = (rad(52), 0, rad(-28))
         sc.collection.objects.link(surya)
-        kam = self.kam = bpy.data.objects.new('Kamera', bpy.data.cameras.new('Kamera'))
-        sc.collection.objects.link(kam)
-        sc.camera = kam
+        self.kam = bpy.data.objects.new('Kamera', bpy.data.cameras.new('Kamera'))
+        sc.collection.objects.link(self.kam)
+        sc.camera = self.kam
+
+    def _pose(self, klip):
+        if klip:
+            self.P.pasang(self.aksi[klip])
+            self.sc.frame_set(0)
+
+    def pratinjau(self, klip=None, lebar=None):
+        """Lima gambar diam (depan, samping, belakang, serong, atas): pose istirahat, atau frame pertama `klip` (setelah
+        gerakkan) untuk unit yang pose istirahatnya tidak layak dilihat. lebar: bentang datar yang harus masuk gambar."""
+        self._studio()
+        sc, kam = self.sc, self.kam
+        self._pose(klip)
         sc.render.resolution_x, sc.render.resolution_y = 520, 640
+        bentang = max(self.tinggi, (lebar or 0) * 640 / 520)
         tengah = Vector((0, 0, self.tinggi / 2))
         for nama, arah, orto in (('depan', (0, -1, 0), 1), ('samping', (1, 0, 0), 1), ('belakang', (0, 1, 0), 1), ('serong', (0.62, -1, 0.42), 0), ('atas', (0.25, -1, 1.05), 0)):
             arah = Vector(arah).normalized()
             kam.data.type = 'ORTHO' if orto else 'PERSP'
-            kam.data.ortho_scale = self.tinggi * 1.12
+            kam.data.ortho_scale = bentang * 1.12
             kam.data.lens = 70
-            kam.location = tengah + arah * (8 if orto else 2.95 * self.tinggi)
+            kam.location = tengah + arah * (8 if orto else 2.95 * bentang)
             kam.rotation_euler = (-arah).to_track_quat('-Z', 'Y').to_euler()
             sc.render.filepath = self.berkas(nama + '.png')
             bpy.ops.render.render(write_still=True)
+        if klip:
+            self.P.diam()
 
-    def pratinjau_tim(self):
+    def pratinjau_tim(self, klip=None):
         """Bahan kain_tim dikalikan warna tim, seperti yang dilakukan game; memakai sudut kamera terakhir pratinjau()."""
+        self._pose(klip)
         nt = self.akhir[1].node_tree
         kali, b = nt.nodes.new('ShaderNodeMix'), next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
         kali.data_type, kali.blend_type = 'RGBA', 'MULTIPLY'
@@ -661,6 +694,8 @@ class Tokoh:
             kali.inputs[7].default_value = (*[lin(int(hexa[i:i + 2], 16) / 255) for i in (0, 2, 4)], 1)
             self.sc.render.filepath = self.berkas('tim-' + nama + '.png')
             bpy.ops.render.render(write_still=True)
+        if klip:
+            self.P.diam()
 
     # ---- kerangka + gerak → GLB berkerangka
     # lapis luar meniru bobot lapis di baliknya supaya tidak saling menembus saat bergerak (lihat ikat)
@@ -668,23 +703,33 @@ class Tokoh:
             ('gesper', 'tunik', None), ('gesper', 'rok', None), ('selempang', 'dada', None), ('mantel', 'dada', None),
             ('pelat_kakiL', 'sepatuL', None), ('pelat_kakiR', 'sepatuR', None))
 
-    def gerakkan(self, klip, glb, tiru=None, lihat=None):
+    def gerakkan(self, klip, glb, tiru=None, lihat=None, tulang_lain=(), kelompok=None, peraga=None):
         """klip: [(nama, jumlah frame, fungsi(P, p))]. tiru: [(bagian sasaran, bagian sumber, rentang_z)], bawaan TIRU untuk
-        bagian yang ada. lihat: opsi lembar kontak per klip {nama: {…}} atau {'*': {…}} untuk semua."""
+        bagian yang ada. lihat: opsi lembar kontak per klip {nama: {…}} atau {'*': {…}} untuk semua.
+        tulang_lain: tulang tambahan (mis. kerangka kuda) sebagai (nama, induk, pangkal, ujung); tulang akar manusia
+        diikat ke induk_manusia bila peraga menyebutkannya. kelompok: [(awalan nama tulang, nama-nama bagian)] = bobot
+        otomatis dihitung per kelompok (penunggang terhadap tulangnya sendiri, kuda terhadap tulang kuda).
+        peraga: opsi Peraga (kaki=…, lengan=…) dan 'induk_manusia'."""
         sc, ob, me, B = self.sc, self.ob, self.ob.data, self.bagian
+        peraga = dict(peraga or {})
+        induk_manusia = peraga.pop('induk_manusia', None)
         ada = {b['nama'] for b in B}
         tiru = [t for t in (self.TIRU if tiru is None else tiru) if t[0] in ada and t[1] in ada]
         kaku = {}
         for b in B:
             if b['kaku']:
                 kaku.setdefault(b['kaku'], []).extend(self.di(b['nama']))
-        kaku.setdefault('Head', []).extend(i for i in self.di('kepala') if me.vertices[i].co.z > 1.475 - self.dasar)   # kepala di atas dagu kaku
-        arm = self.arm = buat_kerangka(sendi({k: self.LENGAN[k][:2] for k in (1, -1)}, turun=self.dasar, kaki_x=self.KAKI_X))
-        self.catatan += ikat(ob, arm, kaku, tiru=[(self.di(a), self.di(b), r) for a, b, r in tiru])
-        P = self.P = Peraga(arm)
+        kaku.setdefault('Head', []).extend(i for i in self.di('kepala') if me.vertices[i].co.z > 1.475 + self.geser.z - self.dasar)   # kepala di atas dagu kaku
+        turun = Vector((0, 0, self.dasar))
+        manusia = [(n, i or induk_manusia, h + self.geser, t + self.geser) for n, i, h, t in sendi({k: self.LENGAN[k][:2] for k in (1, -1)}, turun=self.dasar, kaki_x=self.KAKI_X)]
+        arm = self.arm = buat_kerangka([(n, i, Vector(h) - turun, Vector(t) - turun) for n, i, h, t in tulang_lain] + manusia)
+        grup = [([b.name for b in arm.data.bones if b.name.startswith(awalan)], self.di(*bagian)) for awalan, bagian in kelompok] if kelompok else None
+        self.catatan += ikat(ob, arm, kaku, tiru=[(self.di(a), self.di(b), r) for a, b, r in tiru], kelompok=grup)
+        P = self.P = Peraga(arm, **peraga)
         for nama, frame, fungsi in klip:
             P.rekam(nama, frame, fungsi)
-        aksi = P.selesai()
+        aksi = self.aksi = P.selesai()
+        self._studio()
         badan = set(self.di(*[b['nama'] for b in B if not b['kaku'] or b['nama'] == 'kepala']))
         lantai = {}
         for nama, _, _ in klip:                             # titik terendah badan (tanpa perlengkapan) sepanjang klip: [paling rendah, paling tinggi]
@@ -755,38 +800,49 @@ def buat_kerangka(tulang, nama='Kerangka'):
     return arm
 
 
-def ikat(ob, arm, kaku=None, tiru=None, maks=4):
+def ikat(ob, arm, kaku=None, tiru=None, maks=4, kelompok=None):
     """Bobot otomatis (panas tulang) + bagian kaku {tulang: [indeks verteks]} diikat penuh. Hasil: catatan.
+    kelompok: [(nama-nama tulang, indeks verteks)] = tiap kelompok verteks hanya dibobot terhadap tulang kelompoknya.
     tiru: [(sasaran, sumber, rentang_z)] = verteks sasaran meniru bobot verteks sumber terdekat, supaya dua lapis kain
     bergerak bersama dan lapis dalam tidak menembus keluar; rentang_z (z0, z1): penuh di bawah z0, memudar sampai z1."""
     sc, catatan, me = bpy.context.scene, [], ob.data
     semua_kaku = {i for idx in (kaku or {}).values() for i in idx}
     # Bobot otomatis dihitung pada salinan tanpa bagian kaku: benda tipis (tali busur, bulu panah) bisa menggagalkan
     # hitungan panas tulang untuk seluruh mesh, padahal bagian itu toh diikat penuh ke satu tulang.
-    tmp = ob.copy()
-    tmp.data = me.copy()
-    sc.collection.objects.link(tmp)
-    bm = bmesh.new()
-    bm.from_mesh(tmp.data)
-    bm.verts.ensure_lookup_table()
-    bmesh.ops.delete(bm, geom=[bm.verts[i] for i in semua_kaku], context='VERTS')
-    bm.to_mesh(tmp.data)
-    bm.free()
-    for o in sc.objects:
-        o.select_set(o in (tmp, arm))
-    bpy.context.view_layer.objects.active = arm
-    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
     for b in arm.data.bones:
         ob.vertex_groups.new(name=b.name)
-    lentur = [i for i in range(len(me.vertices)) if i not in semua_kaku]      # urutan verteks salinan = urutan ini
-    nama_grup = [g.name for g in tmp.vertex_groups]
-    for v in tmp.data.vertices:
-        for g in v.groups:
-            if g.weight > 0:
-                ob.vertex_groups[nama_grup[g.group]].add([lentur[v.index]], g.weight, 'REPLACE')
-    data_tmp = tmp.data
-    bpy.data.objects.remove(tmp, do_unlink=True)
-    bpy.data.meshes.remove(data_tmp)
+    semua = set(range(len(me.vertices)))
+    for tulang, verteks in (kelompok or [([b.name for b in arm.data.bones], semua)]):
+        pakai = set(verteks) - semua_kaku
+        if not pakai:
+            continue
+        tmp = ob.copy()
+        tmp.data = me.copy()
+        tmp.vertex_groups.clear()
+        sc.collection.objects.link(tmp)
+        bm = bmesh.new()
+        bm.from_mesh(tmp.data)
+        bm.verts.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[bm.verts[i] for i in semua - pakai], context='VERTS')
+        bm.to_mesh(tmp.data)
+        bm.free()
+        for b in arm.data.bones:
+            b.use_deform = b.name in tulang
+        for o in sc.objects:
+            o.select_set(o in (tmp, arm))
+        bpy.context.view_layer.objects.active = arm
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+        lentur = sorted(pakai)                               # urutan verteks salinan = urutan ini
+        nama_grup = [g.name for g in tmp.vertex_groups]
+        for v in tmp.data.vertices:
+            for g in v.groups:
+                if g.weight > 0:
+                    ob.vertex_groups[nama_grup[g.group]].add([lentur[v.index]], g.weight, 'REPLACE')
+        data_tmp = tmp.data
+        bpy.data.objects.remove(tmp, do_unlink=True)
+        bpy.data.meshes.remove(data_tmp)
+    for b in arm.data.bones:
+        b.use_deform = True
     ob.parent = arm
     ob.modifiers.new('Armature', 'ARMATURE').object = arm
     kosong = [v.index for v in me.vertices if v.index not in semua_kaku and not any(g.weight > 1e-4 for g in v.groups)]
@@ -843,7 +899,9 @@ class Peraga:
     genggaman (IK) dan arah tangan bisa dikunci di ruang dunia (untuk senjata yang menempel di tangan). Tiap frame
     direkam lalu ditulis jadi aksi berkunci per frame tanpa pengekang."""
 
-    def __init__(self, arm, fps=30):
+    def __init__(self, arm, fps=30, kaki=None, lengan=None):
+        """kaki: {kunci: (tulang tengah, tulang ujung, arah kutub)} = rantai IK dua ruas yang ujungnya menapak (bawaan: kaki
+        manusia Left/Right bila ada). lengan: {kunci: (tulang atas, tengah, ujung)} (bawaan: lengan manusia)."""
         self.arm, self.pb, self.fps, self.rekaman = arm, arm.pose.bones, fps, {}
         self.rq = {b.name: b.bone.matrix_local.to_quaternion() for b in self.pb}
         self.kepala = {b.name: b.bone.matrix_local.to_translation() for b in self.pb}
@@ -851,6 +909,10 @@ class Peraga:
         sc = bpy.context.scene
         sc.render.fps = fps
         self.kendali = []
+        if kaki is None:
+            kaki = {s: (s + 'Leg', s + 'Foot', (0, -0.8, 0)) for s, _ in SISI}
+        if lengan is None:
+            lengan = {s: (s + 'Arm', s + 'ForeArm', s + 'Hand') for s, _ in SISI if s + 'Hand' in self.pb}
 
         def kosong(nama):
             e = bpy.data.objects.new(nama, None)
@@ -860,47 +922,48 @@ class Peraga:
             return e
 
         self.kaki, self.tgn = {}, {}
-        for s, k in SISI:
+        for s, (tengah, ujung, kutub) in kaki.items():
             t, p = kosong(s + '_telapak'), kosong(s + '_lutut')
-            p.location = self.kepala[s + 'Leg'] + Vector((0, -0.8, 0))
-            ik = self.pb[s + 'Leg'].constraints.new('IK')
+            p.location = self.kepala[tengah] + Vector(kutub)
+            ik = self.pb[tengah].constraints.new('IK')
             ik.target, ik.pole_target, ik.chain_count = t, p, 2
-            cr = self.pb[s + 'Foot'].constraints.new('COPY_ROTATION')
+            cr = self.pb[ujung].constraints.new('COPY_ROTATION')
             cr.target = t
-            self.kaki[s] = (t, ik, cr)
+            self.kaki[s] = (t, ik, cr, tengah, ujung)
+        for s, (atas, tengah, ujung) in lengan.items():
             t, p = kosong(s + '_tangan'), kosong(s + '_siku')
-            ik = self.pb[s + 'ForeArm'].constraints.new('IK')
+            ik = self.pb[tengah].constraints.new('IK')
             ik.target, ik.pole_target, ik.chain_count = t, p, 2
-            cr = self.pb[s + 'Hand'].constraints.new('COPY_ROTATION')
+            cr = self.pb[ujung].constraints.new('COPY_ROTATION')
             cr.target = t
-            self.tgn[s] = (t, p, ik, cr)
+            self.tgn[s] = (t, p, ik, cr, atas, tengah, ujung)
         self.awal()
-        for s, _ in SISI:                                    # sudut kutub: pilih yang membiarkan lutut/siku di tempat istirahatnya
-            for ik, tengah, kutub in ((self.kaki[s][1], s + 'Leg', None), (self.tgn[s][2], s + 'ForeArm', self.tgn[s][1])):
-                if kutub:
-                    kutub.location = self.kepala[tengah] + Vector((0, 0.6, 0))
-                ik.influence, terbaik = 1, None
-                for a in (0, 90, 180, -90):
-                    ik.pole_angle = rad(a)
-                    bpy.context.view_layer.update()
-                    d = ((arm.matrix_world @ self.pb[tengah].matrix).to_translation() - self.kepala[tengah]).length
-                    if terbaik is None or d < terbaik[0]:
-                        terbaik = (d, a)
-                ik.pole_angle = rad(terbaik[1])
+        for ik, tengah, kutub in [(v[1], v[3], None) for v in self.kaki.values()] + [(v[2], v[5], v[1]) for v in self.tgn.values()]:
+            if kutub:                                        # sudut kutub: pilih yang membiarkan lutut/siku di tempat istirahatnya
+                kutub.location = self.kepala[tengah] + Vector((0, 0.6, 0))
+            ik.influence, terbaik = 1, None
+            for a in (0, 90, 180, -90):
+                ik.pole_angle = rad(a)
+                bpy.context.view_layer.update()
+                d = ((arm.matrix_world @ self.pb[tengah].matrix).to_translation() - self.kepala[tengah]).length
+                if terbaik is None or d < terbaik[0]:
+                    terbaik = (d, a)
+            ik.pole_angle = rad(terbaik[1])
         self.awal()
 
     def awal(self):
         for b in self.pb:
             b.rotation_quaternion, b.location, b.scale = (1, 0, 0, 0), (0, 0, 0), (1, 1, 1)
-        for s, k in SISI:
+        for s in self.kaki:
             self.telapak(s)
-            t, p, ik, cr = self.tgn[s]
-            t.location, t.rotation_quaternion, ik.influence, cr.influence = self.kepala[s + 'Hand'], self.rq[s + 'Hand'], 0, 0
+        for t, p, ik, cr, atas, tengah, ujung in self.tgn.values():
+            t.location, t.rotation_quaternion, ik.influence, cr.influence = self.kepala[ujung], self.rq[ujung], 0, 0
         self.ik(1)
 
-    def ik(self, pengaruh):
-        for t, ik, cr in self.kaki.values():
-            ik.influence = cr.influence = pengaruh
+    def ik(self, pengaruh, kunci=None):
+        for s, v in self.kaki.items():
+            if kunci is None or s in kunci:
+                v[1].influence = v[2].influence = pengaruh
 
     @staticmethod
     def putaran(putaran):
@@ -922,23 +985,23 @@ class Peraga:
 
     def telapak(self, s, geser=(0, 0, 0), jungkit=0.0, serong=0.0):
         """Sasaran pergelangan kaki (geser dari posisi istirahat); jungkit > 0 = tumit terangkat, serong = putar keluar."""
-        t = self.kaki[s][0]
-        t.location = self.kepala[s + 'Foot'] + Vector(geser)
-        t.rotation_quaternion = Quaternion(Z, serong) @ Quaternion(X, jungkit) @ self.rq[s + 'Foot']
+        t, ujung = self.kaki[s][0], self.kaki[s][4]
+        t.location = self.kepala[ujung] + Vector(geser)
+        t.rotation_quaternion = Quaternion(Z, serong) @ Quaternion(X, jungkit) @ self.rq[ujung]
 
     def tangan(self, s, genggam=None, arah=None, siku=None):
         """genggam: titik dunia tempat tengah telapak berada (lengan mengikuti lewat IK). arah: putaran tangan di ruang
         dunia terhadap pose istirahatnya (kuaternion atau [(sumbu, sudut)]); benda yang menempel di tangan ikut berputar.
         siku: titik dunia yang dituju siku (bawaan: belakang-bawah-luar bahu)."""
-        t, p, ik, cr = self.tgn[s]
-        k = 1 if s == 'Left' else -1
+        t, p, ik, cr, atas, tengah, ujung = self.tgn[s]
+        k = 1 if 'Left' in s else -1
         q = self.putaran(arah) if arah is not None else Quaternion()
         if arah is not None:
-            t.rotation_quaternion, cr.influence = q @ self.rq[s + 'Hand'], 1
+            t.rotation_quaternion, cr.influence = q @ self.rq[ujung], 1
         if genggam is not None:
-            telapak = (self.ekor[s + 'Hand'] - self.kepala[s + 'Hand']) * (0.075 / 0.105)       # pergelangan → tengah telapak (istirahat)
+            telapak = (self.ekor[ujung] - self.kepala[ujung]) * (0.075 / 0.105)                 # pergelangan → tengah telapak (istirahat)
             t.location, ik.influence = Vector(genggam) - q @ telapak, 1
-            p.location = Vector(siku) if siku is not None else self.kepala[s + 'Arm'] + Vector((k * 0.30, 0.55, -0.45))
+            p.location = Vector(siku) if siku is not None else self.kepala[atas] + Vector((k * 0.30, 0.55, -0.45))
 
     def potret(self):
         return ({b.name: (b.rotation_quaternion.copy(), b.location.copy()) for b in self.pb},
@@ -993,11 +1056,12 @@ class Peraga:
             a = bpy.data.actions.new(nama)
             a.use_fake_user = True
             self.arm.animation_data.action = a
+            bergeser = {b.name for b in self.pb if b.parent is None or any(pose[b.name][0].length > 1e-6 for pose in data)}
             for f, pose in enumerate(data):
                 for b in self.pb:
                     b.location, b.rotation_quaternion = pose[b.name]
                     b.keyframe_insert('rotation_quaternion', frame=f)
-                    if b.parent is None:
+                    if b.name in bergeser:
                         b.keyframe_insert('location', frame=f)
             aksi[nama] = a
         self.diam()
