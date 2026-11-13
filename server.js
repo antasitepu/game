@@ -2,29 +2,95 @@
 // Server Benteng Fajar (tanpa dependency):
 //   1. menyajikan file game (index.html, /js, /css, /assets)
 //   2. relay WebSocket untuk multiplayer: meneruskan pesan antarpemain (2–4) dalam satu ruangan
-// Jalankan: node server.js   (opsi: PORT=8080 HOST=0.0.0.0)
-// Server tidak menjalankan logika game dan tidak menyimpan data apa pun.
-const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os');
+// Jalankan: node server.js   (opsi: PORT=8080 HOST=0.0.0.0; untuk layanan publik lihat DEPLOY.md)
+// Server tidak menjalankan logika game dan tidak menyimpan data apa pun (tanpa akun, tanpa log alamat IP).
+const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), os = require('os'), zlib = require('zlib');
 
 const PORT = +process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.bin': 'application/octet-stream', '.jpg': 'image/jpeg' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.bin': 'application/octet-stream', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
 const CODE = ['.html', '.js', '.css'];   // jenis file yang boleh diambil dari luar /assets
+const num = (k, d) => (process.env[k] ? +process.env[k] || d : d);
 const MAX_MSG = 32 * 1024;   // byte per pesan
-const MAX_CONN = 400;
-const MAX_ROOMS = 200;
+const MAX_CONN = num('MAX_CONN', 400);
+const MAX_ROOMS = num('MAX_ROOMS', 200);
 const ROOM_MAX = 4;          // klien per ruangan
 const RATE = 150;            // pesan per detik per koneksi
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LEN = 5;          // 31^5 ≈ 28 juta kode: tidak praktis ditebak dengan batas percobaan di bawah
+// --- perlindungan untuk layanan publik
+// TRUST_PROXY=1: server berada di belakang SATU reverse proxy tepercaya (TLS); alamat klien dibaca dari kepala proxy.
+// ALLOWED_ORIGINS: daftar asal (dipisah koma) yang boleh membuka WebSocket; kosong = hanya halaman dari host yang sama.
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
+const ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const IP_CONN = num('MAX_CONN_PER_IP', 16);                 // koneksi serentak per alamat (satu rumah/sekolah bisa berbagi alamat)
+const IP_ROOMS = num('ROOMS_PER_IP_PER_MIN', 10);           // ruangan baru per alamat per menit
+const IP_FAILS = num('JOIN_FAILS_PER_IP_PER_MIN', 20);      // percobaan gabung yang gagal per alamat per menit
+const CONN_FAILS = 6;                                       // …dan per koneksi, sebelum koneksinya diputus
+const IDLE_MS = num('IDLE_MS', 30e3);                       // koneksi yang tidak masuk ruangan mana pun
+const LOBBY_MS = num('LOBBY_MS', 30 * 60e3);                // ruangan yang tidak kunjung dimulai
+const STALL_MS = num('STALL_MS', 30e3);                     // ruangan yang macet menunggu satu pemain (lihat sweep)
+const DEAD_MS = num('DEAD_MS', 10 * 60e3);                  // ruangan bermain yang sunyi total
+const MAX_BUFFER = 1 << 20;                                 // byte yang boleh menumpuk untuk klien yang tidak membaca
 const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 // ---------------------------------------------------------------- file statis
+
+// Versi permainan (build): sidik isi index.html, /js, dan /css. Disisipkan ke index.html dan dikirim klien saat membuat/
+// bergabung ke ruangan, supaya pemain dengan halaman lama dan baru tidak masuk ruangan yang sama (simulasinya berbeda).
+let buildSig = '', buildId = 'dev';
+function build() {
+  const files = [path.join(ROOT, 'index.html')];
+  const walk = dir => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const f = path.join(dir, e.name); if (e.isDirectory()) walk(f); else if (CODE.includes(path.extname(f))) files.push(f); } };
+  try {
+    walk(path.join(ROOT, 'js'));
+    walk(path.join(ROOT, 'css'));
+    files.sort();
+    const sig = files.map(f => { const st = fs.statSync(f); return f + ':' + st.mtimeMs + ':' + st.size; }).join('|');
+    if (sig !== buildSig) {
+      const h = crypto.createHash('sha1');
+      for (const f of files) h.update(fs.readFileSync(f));
+      buildSig = sig;
+      buildId = h.digest('hex').slice(0, 12);
+    }
+  } catch (e) { /* file sedang ditulis: pakai nilai terakhir */ }
+  return buildId;
+}
+
+const SECURITY = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' };
+// Hanya skrip dan gaya milik sendiri; sambungan WebSocket boleh ke server lain (kolom alamat server di menu).
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; " +
+  "connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+const GZIP = ['.html', '.js', '.css', '.json', '.bin'];
+const cache = new Map();   // file → { sig, etag, body, gz }
+
+// Isi file + ETag + versi gzip-nya, disimpan di memori sampai file berubah.
+function load(file, ext, cb) {
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) return cb(null);
+    const index = file === path.join(ROOT, 'index.html'), sig = st.mtimeMs + ':' + st.size + (index ? ':' + build() : ''), hit = cache.get(file);
+    if (hit && hit.sig === sig) return cb(hit);
+    fs.readFile(file, (e2, data) => {
+      if (e2) return cb(null);
+      if (index) data = Buffer.from(data.toString('utf8').replace('<head>', '<head>\n  <meta name="bf-build" content="' + buildId + '">'));
+      const entry = { sig, etag: '"' + crypto.createHash('sha1').update(data).digest('hex').slice(0, 20) + '"', body: data, gz: null };
+      const done = () => { cache.set(file, entry); cb(entry); };
+      if (!GZIP.includes(ext) || data.length < 1024) return done();
+      zlib.gzip(data, (e3, gz) => { if (!e3 && gz.length < data.length * 0.9) entry.gz = gz; done(); });
+    });
+  });
+}
 
 function serveStatic(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
   let p;
   try { p = decodeURIComponent(req.url.split('?')[0]); } catch (e) { res.writeHead(400); res.end(); return; }
+  if (p === '/healthz') {                                 // untuk pemantauan: tanpa data pemain
+    res.writeHead(200, Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, SECURITY));
+    res.end(req.method === 'HEAD' ? undefined : JSON.stringify({ ok: true, build: build(), rooms: rooms.size, conns: conns.size }));
+    return;
+  }
   if (p === '/') p = '/index.html';
   const ext = path.extname(p);
   // Hanya file game yang boleh diakses; server.js, tests, dsb. tidak disajikan.
@@ -32,19 +98,60 @@ function serveStatic(req, res) {
   const allowed = TYPES[ext] && (inCode || (p.startsWith('/assets/') && !CODE.includes(ext))) && !p.includes('..') && !p.includes('\0');
   const file = path.join(ROOT, p);
   if (!allowed || !file.startsWith(ROOT + path.sep)) { res.writeHead(404); res.end('Not found'); return; }
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found'); return; }
-    res.writeHead(200, { 'Content-Type': TYPES[ext], 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' });
-    res.end(req.method === 'HEAD' ? undefined : data);
+  load(file, ext, f => {
+    if (!f) { res.writeHead(404); res.end('Not found'); return; }
+    // no-cache = selalu ditanyakan ulang; bila belum berubah dijawab 304 tanpa isi
+    const head = Object.assign({ 'Content-Type': TYPES[ext], 'Cache-Control': 'no-cache', ETag: f.etag, Vary: 'Accept-Encoding' }, SECURITY);
+    if (p === '/index.html') head['Content-Security-Policy'] = CSP;
+    if (req.headers['if-none-match'] === f.etag) { res.writeHead(304, head); res.end(); return; }
+    const gz = f.gz && /\bgzip\b/.test(String(req.headers['accept-encoding'] || ''));
+    if (gz) head['Content-Encoding'] = 'gzip';
+    const body = gz ? f.gz : f.body;
+    head['Content-Length'] = body.length;
+    res.writeHead(200, head);
+    res.end(req.method === 'HEAD' ? undefined : body);
   });
 }
 
 // ---------------------------------------------------------------- WebSocket (RFC 6455)
 
 const conns = new Set(), rooms = new Map();
+const ips = new Map();     // alamat → { conns, rooms: [waktu], fails: [waktu] } (hanya di memori, untuk pembatasan)
+
+function clientIp(req) {
+  if (TRUST_PROXY) {
+    const cf = req.headers['cf-connecting-ip'];
+    if (typeof cf === 'string' && cf) return cf.trim();
+    const xf = String(req.headers['x-forwarded-for'] || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (xf.length) return xf[xf.length - 1];             // entri terakhir = yang ditambahkan proxy kita sendiri
+  }
+  return req.socket.remoteAddress || '?';
+}
+const ipOf = ip => { let r = ips.get(ip); if (!r) ips.set(ip, r = { conns: 0, rooms: [], fails: [] }); return r; };
+// Catat satu kejadian pada daftar waktu `list`; false bila dalam semenit terakhir sudah mencapai `max`.
+function allow(list, max) {
+  const now = Date.now();
+  while (list.length && now - list[0] > 60e3) list.shift();
+  if (list.length >= max) return false;
+  list.push(now);
+  return true;
+}
+
+// WebSocket hanya boleh dibuka oleh halaman kita sendiri (atau asal yang didaftarkan). Klien tanpa kepala Origin
+// (bukan peramban) tidak dibatasi di sini — Origin bukan autentikasi, hanya mencegah situs lain menumpang lewat
+// peramban pengunjungnya.
+function originOk(req) {
+  const o = req.headers.origin;
+  if (!o) return true;
+  let host;
+  try { host = new URL(o).host.toLowerCase(); } catch (e) { return false; }
+  if (ORIGINS.length) return ORIGINS.includes(String(o).toLowerCase()) || ORIGINS.includes(host);
+  return host === String(req.headers.host || '').toLowerCase();
+}
 
 function sendFrame(c, op, payload) {
   if (c.socket.destroyed) return;
+  if (c.socket.writableLength > MAX_BUFFER) { setImmediate(drop, c); return; }      // klien tidak membaca: putuskan
   const len = payload.length;
   let head;
   if (len < 126) head = Buffer.from([0x80 | op, len]);
@@ -75,13 +182,15 @@ function leaveRoom(c) {
 function drop(c) {
   if (!conns.delete(c)) return;
   leaveRoom(c);
+  const r = ips.get(c.ip);
+  if (r && --r.conns <= 0 && !r.rooms.length && !r.fails.length) ips.delete(c.ip);
   c.socket.destroy();
 }
 
 function newCode() {
   for (let tries = 0; tries < 50; tries++) {
     let code = '';
-    for (const b of crypto.randomBytes(4)) code += CODE_CHARS[b % CODE_CHARS.length];
+    for (const b of crypto.randomBytes(CODE_LEN)) code += CODE_CHARS[b % CODE_CHARS.length];
     if (!rooms.has(code)) return code;
   }
   return null;
@@ -92,18 +201,27 @@ function onMessage(c, text) {
   let m;
   try { m = JSON.parse(text); } catch (e) { drop(c); return; }
   if (!m || typeof m !== 'object') return;
+  c.last = Date.now();
+  const ver = typeof m.v === 'string' ? m.v.slice(0, 32) : '';
   if (m.t === 'create') {
     if (c.room) return;
+    if (!allow(ipOf(c.ip).rooms, IP_ROOMS)) { send(c, { t: 'error', m: 'Terlalu banyak ruangan dibuat dari jaringanmu. Coba lagi sebentar lagi.' }); return; }
     const code = rooms.size < MAX_ROOMS ? newCode() : null;
     if (!code) { send(c, { t: 'error', m: 'Server penuh, coba lagi nanti' }); return; }
-    c.room = { code, clients: [c].concat(new Array(ROOM_MAX - 1).fill(null)), started: false };
+    c.room = { code, clients: [c].concat(new Array(ROOM_MAX - 1).fill(null)), started: false, v: ver, t0: Date.now() };
     rooms.set(code, c.room);
     send(c, { t: 'room', code, slot: 0 });
   } else if (m.t === 'join') {
     if (c.room) return;
     const room = rooms.get(String(m.code || '').toUpperCase().slice(0, 8));
     const slot = room && !room.started ? room.clients.indexOf(null) : -1;
-    if (slot < 0) { send(c, { t: 'error', m: 'Ruangan tidak ditemukan, sudah penuh, atau permainannya sudah dimulai' }); return; }
+    if (slot < 0) {
+      // menebak-nebak kode ruangan dibatasi per koneksi dan per alamat
+      if (++c.fails >= CONN_FAILS || !allow(ipOf(c.ip).fails, IP_FAILS)) { send(c, { t: 'error', m: 'Terlalu banyak percobaan. Coba lagi sebentar lagi.' }); setImmediate(drop, c); return; }
+      send(c, { t: 'error', m: 'Ruangan tidak ditemukan, sudah penuh, atau permainannya sudah dimulai' });
+      return;
+    }
+    if (room.v !== ver) { send(c, { t: 'error', m: 'Versi permainan berbeda dengan tuan rumah. Muat ulang halaman ini (minta tuan rumah juga), lalu coba lagi.' }); return; }
     const here = [];
     room.clients.forEach((o, i) => { if (o) here.push(i); });
     room.clients[slot] = c;
@@ -112,12 +230,13 @@ function onMessage(c, text) {
     for (const i of here) send(room.clients[i], { t: 'peer', slot });
   } else if (m.t === 'lock') {
     // tuan rumah memulai permainan: ruangan tidak menerima pemain baru lagi
-    if (c.room && c.room.clients[0] === c) c.room.started = true;
+    if (c.room && c.room.clients[0] === c && !c.room.started) { c.room.started = true; for (const o of c.room.clients) if (o) o.turn = -1; }
   } else if (m.t === 'msg') {
     // diteruskan ke semua klien lain; slot pengirim diisi server (tidak bisa dipalsukan klien)
     const room = c.room;
     if (!room || m.d === undefined) return;
     const from = room.clients.indexOf(c);
+    if (m.d && m.d.k === 't' && Number.isInteger(m.d.n) && m.d.n > c.turn) c.turn = m.d.n;      // giliran terakhir yang dikirim (lihat sweep)
     for (const o of room.clients) if (o && o !== c) send(o, { t: 'msg', d: m.d, from });
   }
 }
@@ -150,12 +269,13 @@ function onData(c, chunk) {
 const server = http.createServer(serveStatic);
 
 server.on('upgrade', (req, socket) => {
-  const key = req.headers['sec-websocket-key'];
-  if (req.url !== '/ws' || String(req.headers.upgrade).toLowerCase() !== 'websocket' || !key || conns.size >= MAX_CONN) { socket.destroy(); return; }
+  const key = req.headers['sec-websocket-key'], ip = clientIp(req);
+  if (req.url !== '/ws' || String(req.headers.upgrade).toLowerCase() !== 'websocket' || !key || conns.size >= MAX_CONN || !originOk(req) || ipOf(ip).conns >= IP_CONN) { socket.destroy(); return; }
   const accept = crypto.createHash('sha1').update(key + WS_GUID).digest('base64');
   socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
   socket.setNoDelay(true);
-  const c = { socket, buf: Buffer.alloc(0), frag: null, room: null, alive: true, count: 0 };
+  const c = { socket, buf: Buffer.alloc(0), frag: null, room: null, alive: true, count: 0, ip, fails: 0, turn: -1, t0: Date.now(), last: Date.now() };
+  ipOf(ip).conns++;
   conns.add(c);
   socket.on('data', d => onData(c, d));
   socket.on('close', () => drop(c));
@@ -170,6 +290,45 @@ setInterval(() => {
     sendFrame(c, 0x9, Buffer.alloc(0));
   }
 }, 30000).unref();
+
+// Pembersihan berkala:
+//   - koneksi yang tidak masuk ruangan mana pun dalam IDLE_MS diputus;
+//   - ruangan lobi yang tidak dimulai dalam LOBBY_MS ditutup;
+//   - ruangan yang sedang bermain tetapi sunyi selama STALL_MS berarti semua menunggu paket seorang pemain yang macet
+//     (tab disembunyikan, perangkat tertidur, sambungan menggantung): pemain yang giliran terkirimnya paling tertinggal
+//     diputus — klien lain lalu menganggapnya menyerah dan permainan berlanjut. Bila semuanya sama-sama diam sampai
+//     DEAD_MS (permainan sudah selesai atau ditinggalkan), ruangan dikosongkan.
+function sweep() {
+  const now = Date.now();
+  for (const c of conns) if (!c.room && now - c.last > IDLE_MS) drop(c);
+  for (const room of [...rooms.values()]) {
+    const cs = room.clients.filter(Boolean);
+    if (!room.started) {
+      if (now - room.t0 > LOBBY_MS) for (const o of cs) { send(o, { t: 'error', m: 'Ruangan ditutup karena terlalu lama menunggu.' }); drop(o); }
+      continue;
+    }
+    const quiet = now - Math.max(...cs.map(o => o.last));
+    if (quiet < STALL_MS) continue;
+    const lo = Math.min(...cs.map(o => o.turn)), hi = Math.max(...cs.map(o => o.turn));
+    if (lo < hi) { for (const o of cs) if (o.turn === lo) drop(o); }
+    else if (quiet > DEAD_MS) for (const o of cs) drop(o);
+  }
+  for (const [ip, r] of ips) {
+    while (r.rooms.length && now - r.rooms[0] > 60e3) r.rooms.shift();
+    while (r.fails.length && now - r.fails[0] > 60e3) r.fails.shift();
+    if (r.conns <= 0 && !r.rooms.length && !r.fails.length) ips.delete(ip);
+  }
+}
+setInterval(sweep, Math.min(5000, Math.max(250, STALL_MS / 4))).unref();
+
+// Berhenti dengan rapi (SIGTERM dari pengelola proses saat deploy): tidak menerima koneksi baru, menutup yang ada.
+function shutdown() {
+  server.close(() => process.exit(0));
+  for (const c of [...conns]) { sendFrame(c, 0x8, Buffer.alloc(0)); drop(c); }
+  setTimeout(() => process.exit(0), 1500).unref();
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
 
 server.listen(PORT, HOST, () => {
   console.log('Benteng Fajar berjalan:');

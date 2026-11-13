@@ -10,6 +10,10 @@
 // Slot = nomor kursi di ruangan (dari server). order = slot-slot yang ikut bermain; id pemain = urutannya di order.
 (function () {
   const TURN = 2, DELAY = 2, HASH_EVERY = 20, MAX_CMDS = 100;
+  // Versi permainan yang dimuat halaman ini (disisipkan server ke index.html). Server hanya mempertemukan pemain yang
+  // versinya sama, karena simulasi versi berbeda tidak akan sinkron.
+  const meta = document.querySelector('meta[name="bf-build"]');
+  BF.BUILD = (meta && meta.content) || 'dev';
   const net = BF.net = {
     active: false, waiting: false, desync: false, slot: 0, code: '', order: [0, 1], pid: 0, here: {},
     ws: null, handler: null, pending: [], inbox: [{}, {}], gone: [false, false], hashes: {}, peerHashes: [{}, {}],
@@ -23,7 +27,8 @@
     net.close();
     net.handler = handler;
     let ws;
-    try { ws = new WebSocket('ws://' + addr + '/ws'); } catch (e) { handler('error', 'Alamat server tidak valid'); return; }
+    // halaman HTTPS hanya boleh membuka sambungan aman (wss)
+    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + addr + '/ws'); } catch (e) { handler('error', 'Alamat server tidak valid'); return; }
     net.ws = ws;
     ws.onopen = () => { if (net.ws === ws) handler('open'); };
     ws.onclose = () => { if (net.ws === ws) { net.ws = null; handler('close'); } };
@@ -54,8 +59,8 @@
   };
 
   const raw = o => { if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify(o)); };
-  net.create = () => raw({ t: 'create' });
-  net.join = code => raw({ t: 'join', code: String(code).trim().toUpperCase() });
+  net.create = () => raw({ t: 'create', v: BF.BUILD });
+  net.join = code => raw({ t: 'join', code: String(code).trim().toUpperCase(), v: BF.BUILD });
   net.send = d => raw({ t: 'msg', d });
   net.lock = () => raw({ t: 'lock' });                      // tuan rumah: ruangan ditutup bagi pemain baru
 

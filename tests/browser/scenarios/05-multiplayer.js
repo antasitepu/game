@@ -12,10 +12,12 @@ module.exports = async ({ page, check, root }) => {
   try {
     await sleep(700);
     // ---- server statis: hanya file game yang boleh diakses
+    // berkas tekstur diambil dari manifest, supaya tes tidak bergantung pada format gambar (JPG/WebP)
+    const TEX = '/assets/' + JSON.parse((await request('GET', base + '/assets/manifest.json')).body).tekstur.rumput.file;
     const codes = {};
-    for (const u of ['/', '/js/config.js', '/js/models.js', '/js/vendor/three.min.js', '/css/style.css', '/assets/manifest.json', '/assets/m/pohon0.bin', '/assets/t/rumput.jpg', '/assets/../server.js', '/assets/%2e%2e/server.js', '/tools/aset/olah.mjs', '/js/assets.json', '/server.js', '/tests/sim.test.js', '/js/../server.js', '/%2e%2e/%2e%2e/etc/passwd', '/js/%2e%2e/server.js', '/js/nope.js', '/js/vendor/THREE-LICENSE.txt'])
+    for (const u of ['/', '/js/config.js', '/js/models.js', '/js/vendor/three.min.js', '/css/style.css', '/assets/manifest.json', '/assets/m/pohon0.bin', TEX, '/assets/../server.js', '/assets/%2e%2e/server.js', '/tools/aset/olah.mjs', '/js/assets.json', '/server.js', '/tests/sim.test.js', '/js/../server.js', '/%2e%2e/%2e%2e/etc/passwd', '/js/%2e%2e/server.js', '/js/nope.js', '/js/vendor/THREE-LICENSE.txt'])
       codes[u] = (await request('GET', base + u)).status;
-    check('server menyajikan file game (termasuk three.js & aset)', ['/', '/js/config.js', '/js/models.js', '/js/vendor/three.min.js', '/css/style.css', '/assets/manifest.json', '/assets/m/pohon0.bin', '/assets/t/rumput.jpg'].every(u => codes[u] === 200), codes);
+    check('server menyajikan file game (termasuk three.js & aset)', ['/', '/js/config.js', '/js/models.js', '/js/vendor/three.min.js', '/css/style.css', '/assets/manifest.json', '/assets/m/pohon0.bin', TEX].every(u => codes[u] === 200), codes);
     check('server menolak file di luar game & path traversal', ['/assets/../server.js', '/assets/%2e%2e/server.js', '/tools/aset/olah.mjs', '/js/assets.json', '/server.js', '/tests/sim.test.js', '/js/../server.js', '/%2e%2e/%2e%2e/etc/passwd', '/js/%2e%2e/server.js', '/js/nope.js', '/js/vendor/THREE-LICENSE.txt'].every(u => codes[u] === 404), codes);
     check('server menolak metode selain GET/HEAD', (await request('POST', base + '/')).status === 405);
 
@@ -27,7 +29,7 @@ module.exports = async ({ page, check, root }) => {
     check('alamat server terisi otomatis', (await a.ev(`document.getElementById('mp-addr').value`)) === '127.0.0.1:' + PORT);
     await b.clickEl('#mode-tabs button[data-mode="mp"]');
     await b.clickEl('#mp-code');
-    await b.type('zzzz');
+    await b.type('zzzzz');
     await b.clickEl('#mp-join');
     await sleep(500);
     check('kode ruangan salah → pesan error, tetap di form', (await b.ev(`document.getElementById('mp-status').textContent`)).includes('tidak ditemukan') && !(await hidden(b, 'mp-connect')));
@@ -35,7 +37,7 @@ module.exports = async ({ page, check, root }) => {
     await a.clickEl('#mp-create');
     await sleep(500);
     const code = await a.ev(`BF.net.code`);
-    check('tuan rumah mendapat kode ruangan 4 karakter', /^[A-Z0-9]{4}$/.test(code) && !(await hidden(a, 'mp-lobby')) && await a.ev(`document.getElementById('mp-start').disabled`), code);
+    check('tuan rumah mendapat kode ruangan 5 karakter', /^[A-Z0-9]{5}$/.test(code) && !(await hidden(a, 'mp-lobby')) && await a.ev(`document.getElementById('mp-start').disabled`), code);
     await b.clickEl('#factions .faction:nth-child(2)');   // tamu memilih Bara
     await b.ev(`document.getElementById('mp-code').value = ''`);
     await b.clickEl('#mp-code');

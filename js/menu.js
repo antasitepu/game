@@ -298,7 +298,7 @@
     $('mp-create').addEventListener('click', () => mpOpen(() => net.create()));
     $('mp-join').addEventListener('click', () => {
       const code = $('mp-code').value.trim().toUpperCase();
-      if (!/^[A-Z0-9]{4}$/.test(code)) { mpStatus('Kode ruangan terdiri dari 4 karakter', true); return; }
+      if (!/^[A-Z0-9]{5}$/.test(code)) { mpStatus('Kode ruangan terdiri dari 5 karakter', true); return; }
       mpOpen(() => net.join(code));
     });
     $('mp-leave').addEventListener('click', () => mpReset(''));
