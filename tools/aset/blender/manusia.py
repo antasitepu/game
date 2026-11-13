@@ -43,11 +43,19 @@ def elips(bm, pusat, jari, sumbu=None, seg=16, ring=10):
     return bmesh.ops.create_uvsphere(bm, u_segments=seg, v_segments=ring, radius=1, matrix=Matrix.Translation(pusat) @ R @ Matrix.Diagonal((*jari, 1)))['verts']
 
 
-def bubut(bm, profil, seg, pusat=(0, 0, 0), sumbu=(X, Y, Z), uv=None):
-    """Benda putar: profil [(jari, tinggi)] diputar mengelilingi sumbu[2] lewat `pusat`. uv(i_profil, j) → (u, v) untuk UV 'asal'."""
+def bubut(bm, profil, seg, pusat=(0, 0, 0), sumbu=(X, Y, Z), uv=None, n=2.0, ubah=None):
+    """Benda putar: profil [(jari, tinggi)] diputar mengelilingi sumbu[2] lewat `pusat`. uv(i_profil, j) → (u, v) untuk UV 'asal'.
+    n > 2 = penampang lebih kotak; ubah(a, b) → (a, b) mengubah koordinat pada dua sumbu pertama (mis. meruncingkan satu ujung)."""
     pusat, lapis = Vector(pusat), bm.loops.layers.uv.get('asal') or (bm.loops.layers.uv.new('asal') if uv else None)
-    cincin = [[bm.verts.new(pusat + sumbu[0] * (r * math.cos(2 * math.pi * j / seg)) + sumbu[1] * (r * math.sin(2 * math.pi * j / seg)) + sumbu[2] * t)
-               for j in range(seg)] for r, t in profil]
+    sp = lambda c: math.copysign(abs(c) ** (2 / n), c)
+
+    def titik(r, t, j):
+        a, b = r * sp(math.cos(2 * math.pi * j / seg)), r * sp(math.sin(2 * math.pi * j / seg))
+        if ubah:
+            a, b = ubah(a, b)
+        return bm.verts.new(pusat + sumbu[0] * a + sumbu[1] * b + sumbu[2] * t)
+
+    cincin = [[titik(r, t, j) for j in range(seg)] for r, t in profil]
     for i in range(len(profil) - 1):
         for j in range(seg):
             f = bm.faces.new((cincin[i][j], cincin[i][(j + 1) % seg], cincin[i + 1][(j + 1) % seg], cincin[i + 1][j]))
@@ -104,10 +112,10 @@ class Tokoh:
         m['logam'] = logam
         return m
 
-    def kain(self, nama, gbr, ulang, gelap, terang, jahitan=0.0):
+    def kain(self, nama, gbr, ulang, gelap, terang, jahitan=0.0, kasar=0.85, logam=0.0):
         """Tekstur tenun diproyeksikan kotak, dijadikan hitam-putih, lalu dipetakan ke dua warna (gelap → terang).
-        jahitan > 0: garis jahitan tegak tiap `jahitan` meter (baju berlapis kapas)."""
-        m = self.bahan(nama)
+        jahitan > 0: garis jahitan tegak tiap `jahitan` meter (baju berlapis kapas). logam > 0: anyaman logam (zirah rantai)."""
+        m = self.bahan(nama, kasar=kasar, logam=logam)
         nt, b = m.node_tree, next(n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
         px = np.empty(gbr.size[0] * gbr.size[1] * 4, np.float32)
         gbr.pixels.foreach_get(px)
@@ -268,7 +276,7 @@ class Tokoh:
             tabung(bm, [(S + d * u, ry + t, rw + t) for u, ry, rw in ujung], u=Y, w=w, seg=16)             # lengan baju
         self.tambah('tunik', bm, bhn, lebur=(0.007, segitiga, riak), tim=tim)
 
-    def sabuk(self, bhn, juntai=True, lebar=0.02, longgar=0.012):
+    def sabuk(self, bhn, juntai=True, lebar=0.02, longgar=0.012, gesper=None):
         z, rx, ry = self.PINGGANG
         bm = bmesh.new()
         tabung(bm, [((0, 0, z - lebar), rx + longgar, ry + longgar), ((0, 0, z + lebar), rx + longgar, ry + longgar)], seg=16, n=2.5)
@@ -277,6 +285,97 @@ class Tokoh:
             for dx, pj in ((0.035, 0.11), (0.066, 0.085)):
                 tabung(bm, [((dx, -ry - longgar - 0.006, z - 0.01), 0.011, 0.006), ((dx + 0.004, -ry - longgar - 0.014, z - pj), 0.013, 0.006)], seg=6)
         self.tambah('sabuk', bm, bhn)
+        if gesper:
+            bm = bmesh.new()
+            elips(bm, (0, -ry - longgar - 0.002, z), (0.022, 0.006, 0.019), seg=8, ring=4)
+            self.tambah('gesper', bm, gesper)
+
+    def rompi(self, bhn, bawah=0.98, tebal=0.022, nama='rompi', segitiga=420):
+        """Pelindung badan tanpa lengan (pelat dada) di atas baju."""
+        z0, rx0, ry0 = self.PINGGANG
+        t = tebal
+        bm = bmesh.new()
+        tabung(bm, [((0, y, z), rx + t, ry + t) for z, rx, ry, y in ((bawah, rx0 + 0.004, ry0 + 0.004, 0), (z0 + 0.03, rx0, ry0, 0), (1.13, 0.172, 0.120, -0.003), (1.26, 0.190, 0.128, -0.006),
+                                                                  (1.33, 0.196, 0.118, -0.004), (1.375, 0.170, 0.098, 0), (1.405, 0.105, 0.078, 0.004), (1.418, 0.066, 0.064, 0.008))], seg=24, n=2.5)
+        self.tambah(nama, bm, bhn, lebur=(0.007, segitiga, 0.0, 3))
+
+    def rok(self, bhn, atas=1.01, bawah=0.62, tim=True, segitiga=420):
+        """Rok kain dari pinggang sampai `bawah`, di atas baju dan celana."""
+        bm = bmesh.new()
+        f = lambda z: (atas - z) / (atas - 0.62)
+        tabung(bm, [((0, 0, z), 0.172 + 0.062 * f(z), 0.124 + 0.042 * f(z)) for z in (atas, atas - 0.10, (atas + bawah) / 2, bawah)], seg=24, n=2.5)
+        self.tambah('rok', bm, bhn, lebur=(0.007, segitiga, 0.008), tim=tim)
+
+    def pelindung_kaki(self, bhn, tebal=0.016, lutut=False):
+        """Pelat tulang kering (dan tempurung lutut) di atas sepatu."""
+        for k in (1, -1):
+            x = k * self.KAKI_X
+            bm = bmesh.new()
+            tabung(bm, [((x, y, z), rx + tebal, ry + tebal) for y, z, rx, ry in ((0.004, 0.45, 0.049, 0.051), (0.010, 0.36, 0.052, 0.057), (0.006, 0.22, 0.040, 0.043), (0.004, 0.13, 0.032, 0.035))], seg=12)
+            if lutut:
+                elips(bm, (x, -0.058, 0.475), (0.045, 0.030, 0.050), seg=10, ring=6)
+            self.tambah('pelat_kaki' + 'LR'[k < 0], bm, bhn, lebur=(0.005, 150, 0.0, 3))
+
+    def pelindung_bahu(self, bhn):
+        for k in (1, -1):
+            S, d, w = self.LENGAN[k]
+            bm = bmesh.new()
+            elips(bm, S + d * 0.02 + w * 0.012, (0.082, 0.070, 0.090), sumbu=(Y, w, d), seg=12, ring=8)
+            self.tambah('pelat_bahu' + 'LR'[k < 0], bm, bhn, kaku=('Left' if k > 0 else 'Right') + 'Arm')
+
+    def helm(self, bhn, jambul=None):
+        """Helm besi: kubah lonjong dengan bibir dan pelindung hidung; jambul = bahan sirip di puncak (diwarnai tim)."""
+        bm = bmesh.new()
+        bubut(bm, [(0.113, 1.588), (0.113, 1.602), (0.108, 1.606), (0.106, 1.635), (0.096, 1.675), (0.070, 1.712), (0.034, 1.733), (0.004, 1.739)], 16,
+              pusat=(0, 0.002, 0), sumbu=(X * 0.90, Y * 1.04, Z))
+        tabung(bm, [((0, -0.114, 1.606), 0.010, 0.004), ((0, -0.119, 1.548), 0.008, 0.004)], seg=6)
+        self.tambah('helm', bm, bhn, kaku='Head')
+        if jambul:
+            bm = bmesh.new()
+            tabung(bm, [((0, -0.082, 1.715), 0.006, 0.010), ((0, -0.04, 1.752), 0.009, 0.034), ((0, 0.03, 1.756), 0.009, 0.040), ((0, 0.092, 1.712), 0.006, 0.016)], u=X, w=Z, seg=8)
+            self.tambah('jambul', bm, jambul, tim=True, kaku='Head')
+
+    def perisai(self, cat, punggung, besi, bentuk='bulat', geser=0.0):
+        """Perisai di lengan bawah kiri, menghadap sisi punggung lengan: muka bercat (warna tim), punggung, dan tonjolan besi.
+        bentuk: 'bulat', 'layang' (meruncing ke bawah), atau 'menara' (persegi tinggi). geser: sepanjang sumbu tegak perisai."""
+        S, d, w = self.LENGAN[1]
+        C = S + d * 0.415 + w * (0.075 if bentuk == 'menara' else 0.05) + Y * geser
+        lebar, tinggi, n, ubah = {'bulat': (1.0, 1.0, 2.0, None), 'layang': (0.82, 1.30, 2.3, lambda a, b: (a * (1 - 0.72 * max(0.0, b / 0.36) ** 1.5), b)),
+                                  'menara': (0.90, 1.72, 5.0, None)}[bentuk]
+        sumbu, opsi = (d * lebar, Y * tinggi, w), {'n': n, 'ubah': ubah}
+        bm = bmesh.new()
+        bubut(bm, [(0.275, 0.006), (0.268, 0.016), (0.19, 0.032), (0.062, 0.042), (0.004, 0.044)], 20, pusat=C, sumbu=sumbu, **opsi)
+        self.tambah('perisai_muka', bm, cat, tim=True, kaku='LeftForeArm')
+        bm = bmesh.new()
+        bubut(bm, [(0.004, -0.004), (0.262, -0.004), (0.282, 0.0), (0.282, 0.008), (0.275, 0.006)], 20, pusat=C, sumbu=sumbu, **opsi)
+        self.tambah('perisai', bm, punggung, kaku='LeftForeArm')
+        bm = bmesh.new()
+        bubut(bm, [(0.062, 0.042), (0.052, 0.062), (0.030, 0.076), (0.004, 0.080)], 10, pusat=C, sumbu=(d, Y, w))
+        self.tambah('perisai_besi', bm, besi, kaku='LeftForeArm')
+
+    def tombak(self, kayu, besi):
+        """Tombak di tangan kanan, sepanjang sumbu depan-belakang (mata di depan); genggaman GENGGAM m dari pangkal."""
+        g = self.genggam(-1) - self.LENGAN[-1][2] * 0.012
+        bm = bmesh.new()
+        tabung(bm, [(g + Y * GENGGAM, 0.013, 0.013), (g - Y * 1.10, 0.012, 0.012)], u=X, w=Z, seg=6)
+        self.tambah('gagang', bm, kayu, kaku='RightHand')
+        bm = bmesh.new()
+        tabung(bm, [(g - Y * 1.08, 0.015, 0.015), (g - Y * 1.13, 0.016, 0.016), (g - Y * 1.17, 0.034, 0.007), (g - Y * 1.30, 0.014, 0.004), (g - Y * 1.37, 0.002, 0.002)], u=X, w=Z, seg=6)
+        self.tambah('mata_tombak', bm, besi, kaku='RightHand')
+
+    def pedang(self, besi, samak):
+        """Pedang lurus di tangan kanan: bilah ke depan sepanjang sumbu depan-belakang."""
+        g = self.genggam(-1) - self.LENGAN[-1][2] * 0.012
+        bm = bmesh.new()
+        tabung(bm, [(g - Y * 0.075, 0.027, 0.006), (g - Y * 0.56, 0.022, 0.005), (g - Y * 0.75, 0.014, 0.003), (g - Y * 0.81, 0.002, 0.002)], u=X, w=Z, seg=4)
+        self.tambah('bilah', bm, besi, kaku='RightHand', rata=True)
+        bm = bmesh.new()
+        tabung(bm, [(g - Y * 0.07 - X * 0.09, 0.012, 0.010), (g - Y * 0.07 + X * 0.09, 0.012, 0.010)], u=Y, w=Z, seg=6)       # palang
+        elips(bm, g + Y * 0.092, (0.020, 0.020, 0.020), seg=8, ring=6)                                     # kepala gagang
+        self.tambah('palang', bm, besi, kaku='RightHand')
+        bm = bmesh.new()
+        tabung(bm, [(g - Y * 0.062, 0.014, 0.012), (g + Y * 0.08, 0.013, 0.011)], u=X, w=Z, seg=6)
+        self.tambah('gagang', bm, samak, kaku='RightHand')
 
     # ---- rakit: gabung, kaki ke z = 0, atlas, panggang
     def rakit(self, ukuran=1024):
@@ -445,10 +544,16 @@ class Tokoh:
             bpy.ops.render.render(write_still=True)
 
     # ---- kerangka + gerak → GLB berkerangka
-    def gerakkan(self, klip, glb, tiru=(), lihat=None):
-        """klip: [(nama, jumlah frame, fungsi(P, p))]. tiru: [(bagian sasaran, bagian sumber, rentang_z)] (lihat ikat).
-        lihat: opsi lembar kontak per klip {nama: {…}} atau {'*': {…}} untuk semua."""
+    # lapis luar meniru bobot lapis di baliknya supaya tidak saling menembus saat bergerak (lihat ikat)
+    TIRU = (('tunik', 'celana', (0.90, 1.00)), ('rok', 'celana', (0.90, 1.00)), ('sabuk', 'tunik', None), ('gesper', 'tunik', None),
+            ('pelat_kakiL', 'sepatuL', None), ('pelat_kakiR', 'sepatuR', None))
+
+    def gerakkan(self, klip, glb, tiru=None, lihat=None):
+        """klip: [(nama, jumlah frame, fungsi(P, p))]. tiru: [(bagian sasaran, bagian sumber, rentang_z)], bawaan TIRU untuk
+        bagian yang ada. lihat: opsi lembar kontak per klip {nama: {…}} atau {'*': {…}} untuk semua."""
         sc, ob, me, B = self.sc, self.ob, self.ob.data, self.bagian
+        ada = {b['nama'] for b in B}
+        tiru = [t for t in (self.TIRU if tiru is None else tiru) if t[0] in ada and t[1] in ada]
         kaku = {}
         for b in B:
             if b['kaku']:
@@ -918,12 +1023,27 @@ def mati(P, p):
         lengan(P, s, k, turun=lerp(37, -18 if k > 0 else 6, naik(p, 0.05, 0.7)), ayun=-36 * math.sin(math.pi * a) - (5 if k > 0 else 9) * b, tekuk=lerp(16, 42 if k > 0 else 20, b))
 
 
-# ---------------------------------------------------------------- gerak: prajurit bertombak & berperisai
-# Tombak menempel di tangan kanan sepanjang sumbu depan-belakang pose istirahat (mata tombak ke depan): tanpa putaran
-# tangan tombak mendatar ke depan. Perisai menempel di lengan bawah kiri, menghadap sisi punggung lengan.
-TEGAK = Quaternion(Z, rad(45)) @ Quaternion(X, rad(-90))    # tangan kanan: tombak tegak, mata di atas, tangan menghadap depan
-DATAR = Quaternion(Y, rad(-45))                             # tangan kanan: tombak mendatar ke depan, tangan menghadap bawah
+# ---------------------------------------------------------------- gerak: prajurit berperisai (tombak atau pedang)
+# Senjata menempel di tangan kanan sepanjang sumbu depan-belakang pose istirahat (ujungnya ke depan): tanpa putaran
+# tangan senjata mendatar ke depan. Perisai menempel di lengan bawah kiri, menghadap sisi punggung lengan.
 GENGGAM = 0.86                                              # jarak pangkal tombak dari genggaman (m)
+
+
+def bidik(v, h, k=-1):
+    """Putaran tangan (ruang dunia) supaya senjata mengarah v dan tangan (pergelangan → buku jari) kira-kira mengarah h."""
+    a1, a2 = -Y, Vector((k, 0, -1)).normalized()            # arah senjata & arah tangan pada pose istirahat
+    b1 = Vector(v).normalized()
+    b2 = (Vector(h) - b1 * Vector(h).dot(b1)).normalized()
+    return (Matrix((b1, b2, b1.cross(b2))).transposed() @ Matrix((a1, a2, a1.cross(a2)))).to_quaternion()
+
+
+TEGAK = bidik((0, 0, 1), (0, -1, 0))                        # tombak tegak, mata di atas, tangan menghadap depan
+DATAR = bidik((0, -1, 0), (0, 0, -1))                       # tombak mendatar ke depan, tangan menghadap bawah
+# Sikap senjata per keadaan: (titik genggam, arah tangan); 'rebah' = arah senjata saat tergeletak.
+TOMBAK = {'diam': ((-0.31, -0.17, GENGGAM + 0.004), TEGAK), 'jalan': ((-0.31, -0.19, GENGGAM + 0.13), Quaternion(X, rad(7)) @ TEGAK),
+          'lari': ((-0.30, -0.26, GENGGAM + 0.20), Quaternion(X, rad(13)) @ TEGAK), 'rebah': Quaternion(Z, rad(-30)) @ Quaternion(Y, rad(45))}
+PEDANG = {'diam': ((-0.31, -0.20, 0.93), bidik((0.12, -0.80, -0.58), (0, -0.55, -0.83))), 'jalan': ((-0.31, -0.22, 1.05), bidik((0.05, -0.62, 0.78), (0, -0.78, -0.62))),
+          'lari': ((-0.32, -0.22, 1.11), bidik((0.10, -0.45, 0.89), (0, -0.85, -0.50))), 'rebah': bidik((-0.45, -0.89, 0), (-0.89, 0.45, 0))}
 
 
 def perisai(P, maju=0.0, hadap=50, tekuk=80, turun=38):
@@ -931,8 +1051,8 @@ def perisai(P, maju=0.0, hadap=50, tekuk=80, turun=38):
     lengan(P, 'Left', 1, turun=turun, ayun=-12 - maju, tekuk=tekuk, putar=hadap)
 
 
-def siaga(P, p):
-    """Berdiri siaga: tombak tegak bertumpu di tanah, perisai di depan-kiri badan."""
+def siaga(P, p, senjata=TOMBAK):
+    """Berdiri siaga: senjata di tangan kanan (tombak tegak bertumpu di tanah), perisai di depan-kiri badan."""
     s1, s2 = math.sin(2 * math.pi * p), math.sin(4 * math.pi * p + 0.7)
     P.telapak('Left', (0.01, -0.05, 0), 0, rad(6))
     P.telapak('Right', (-0.02, 0.05, 0), 0, rad(-14))
@@ -942,25 +1062,27 @@ def siaga(P, p):
     P.fk('Neck', ('X', rad(-2)), ('Z', rad(2)))
     P.fk('Head', ('Z', rad(6 * s1 + 2 * s2)), ('X', rad(1.2 * s2)))
     perisai(P, hadap=48 + 2 * s1, tekuk=78)
-    P.tangan('Right', genggam=(-0.31, -0.17, GENGGAM + 0.004), arah=Quaternion(X, rad(1.5 * s2)) @ TEGAK)
+    g, q = senjata['diam']
+    P.tangan('Right', genggam=g, arah=Quaternion(X, rad(1.5 * s2)) @ q)
 
 
-def baris(P, p):
-    """Berjalan: tombak tegak sedikit condong ke depan, perisai di sisi depan."""
+def baris(P, p, senjata=TOMBAK):
+    """Berjalan: senjata tegak sedikit condong ke depan, perisai di sisi depan."""
     c = langkah(P, p)
-    naik_turun = -0.05 - 0.017 * math.cos(4 * math.pi * (p - 0.05))
     perisai(P, maju=3 * c, hadap=40, tekuk=76 + 3 * c)
-    P.tangan('Right', genggam=(-0.31, -0.19 - 0.015 * c, GENGGAM + 0.13 + naik_turun), arah=Quaternion(X, rad(7 + 2 * c)) @ TEGAK)
+    g, q = senjata['jalan']
+    P.tangan('Right', genggam=Vector(g) + Vector((0, -0.015 * c, -0.05 - 0.017 * math.cos(4 * math.pi * (p - 0.05)))), arah=Quaternion(X, rad(2 * c)) @ q)
 
 
-def serbu(P, p):
-    """Lari membawa tombak tegak dan perisai rapat di depan badan."""
+def serbu(P, p, senjata=TOMBAK):
+    """Lari membawa senjata dan perisai rapat di depan badan."""
     a = derap(P, p)
     perisai(P, maju=6 + 5 * a, hadap=44, tekuk=88)
-    P.tangan('Right', genggam=(-0.30, -0.26 - 0.03 * a, GENGGAM + 0.20 - 0.07 - 0.03 * math.cos(4 * math.pi * (p - 0.17))), arah=Quaternion(X, rad(13 + 3 * a)) @ TEGAK)
+    g, q = senjata['lari']
+    P.tangan('Right', genggam=Vector(g) + Vector((0, -0.03 * a, -0.07 - 0.03 * math.cos(4 * math.pi * (p - 0.17)))), arah=Quaternion(X, rad(3 * a)) @ q)
 
 
-def tusuk(P, p):
+def tusuk(P, p, senjata=TOMBAK):
     """Menusuk: tombak diturunkan sambil ditarik ke belakang, lalu ditusukkan ke depan dengan langkah kaki kiri."""
     def serang(P):
         a = naik(p, 0.0, 0.30)                               # ancang-ancang: tombak turun mendatar, ditarik ke belakang
@@ -974,19 +1096,40 @@ def tusuk(P, p):
         P.fk('Head', ('Z', rad(12 * a - 14 * b)), ('X', rad(-4 * b)))
         perisai(P, maju=8 * b, hadap=62, tekuk=84)
         tarik, tusukan = Vector((-0.27, 0.10, 1.06)), Vector((-0.15, -0.70, 1.10))
-        P.tangan('Right', genggam=Vector((-0.31, -0.17, GENGGAM + 0.004)).lerp(tarik, a).lerp(tusukan, b), arah=TEGAK.slerp(DATAR, naik(p, 0.0, 0.26)),
+        P.tangan('Right', genggam=Vector(senjata['diam'][0]).lerp(tarik, a).lerp(tusukan, b), arah=senjata['diam'][1].slerp(DATAR, naik(p, 0.0, 0.26)),
                  siku=P.kepala['RightArm'] + Vector((-0.35, 0.6, -0.2)))
-    P.campur(serang, lambda P: siaga(P, 0.0), naik(p, 0.58, 1.0))
+    P.campur(serang, lambda P: siaga(P, 0.0, senjata), naik(p, 0.58, 1.0))
 
 
-def gugur(P, p):
-    """Rebah ke belakang: perisai tetap di depan dada, tombak tergeletak di samping badan."""
+def tebas(P, p, senjata=PEDANG):
+    """Menebas: pedang diangkat ke atas bahu kanan, lalu diayun serong ke kiri-bawah dengan langkah kaki kiri."""
+    def serang(P):
+        a = naik(p, 0.0, 0.32)                               # mengangkat
+        b = naik(p, 0.32, 0.46)                              # tebasan
+        P.telapak('Left', (0.01, -0.05 - 0.17 * b, 0.035 * math.sin(math.pi * b)), 0, rad(6))
+        P.telapak('Right', (-0.02, 0.05 + 0.03 * a, 0.06 * b), rad(20 * b), rad(-18))
+        P.pinggul((0, 0.03 * a - 0.13 * b, -0.03 - 0.05 * b), ('X', rad(-4 * a + 14 * b)), ('Z', rad(-20 * a + 30 * b)))
+        P.fk('Spine', ('X', rad(-3 * a + 8 * b)), ('Z', rad(-10 * a + 16 * b)))
+        P.fk('Spine1', ('X', rad(-3 * a + 8 * b)), ('Z', rad(-12 * a + 18 * b)))
+        P.fk('Neck', ('Z', rad(14 * a - 16 * b)), ('X', rad(-3 * b)))
+        P.fk('Head', ('Z', rad(14 * a - 16 * b)), ('X', rad(-3 * b)))
+        perisai(P, maju=4 * b, hadap=58 - 14 * b, tekuk=84, turun=38 + 6 * b)
+        g0, q0 = senjata['diam']
+        atas, bawah = Vector((-0.36, 0.04, 1.50)), Vector((0.02, -0.50, 0.90))
+        P.tangan('Right', genggam=Vector(g0).lerp(atas, a).lerp(bawah, b),
+                 arah=q0.slerp(bidik((-0.20, 0.45, 0.87), (0, -0.6, 0.8)), a).slerp(bidik((0.50, -0.78, -0.38), (0.3, -0.5, -0.81)), b),
+                 siku=P.kepala['RightArm'] + Vector((-0.45, 0.35, -0.15)))
+    P.campur(serang, lambda P: siaga(P, 0.0, senjata), naik(p, 0.6, 1.0))
+
+
+def gugur(P, p, senjata=TOMBAK):
+    """Rebah ke belakang: perisai tetap di depan dada, senjata tergeletak di samping badan."""
     def jatuh(P):
         a, b = rebah(P, p)
         perisai(P, maju=14 * b, hadap=62, tekuk=92, turun=38 - 10 * b)
         lengan(P, 'Right', -1, turun=lerp(30, 4, b), ayun=-30 * math.sin(math.pi * a) - 8 * b, tekuk=lerp(30, 18, b))
-        P.tangan('Right', arah=TEGAK.slerp(Quaternion(Z, rad(-30)) @ Quaternion(Y, rad(45)), naik(p, 0.1, 0.8)))
-    P.campur(lambda P: siaga(P, 0.0), jatuh, naik(p, 0.0, 0.2))
+        P.tangan('Right', arah=senjata['diam'][1].slerp(senjata['rebah'], naik(p, 0.1, 0.8)))
+    P.campur(lambda P: siaga(P, 0.0, senjata), jatuh, naik(p, 0.0, 0.2))
 
 
 # ---------------------------------------------------------------- pratinjau gerak

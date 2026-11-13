@@ -52,6 +52,8 @@ const RESEP = {
   pekerja: { jenis: 'kerangka', sumber: 'pekerja', lokal: true, tinggi: 0.86, tekstur: 512, lod: [3000] },
   // Unit manusia lain memakai skala yang sama dengan pekerja (bukan tinggi), supaya tombak/helm tidak mengecilkan badannya.
   tombak: { jenis: 'kerangka', sumber: 'tombak', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3400] },
+  pedang: { jenis: 'kerangka', sumber: 'pedang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600] },
+  pengawal: { jenis: 'kerangka', sumber: 'pengawal', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [3600] },
 };
 const TEKSTUR = {
   rumput: { sumber: 'forrest_ground_01', peta: 'Diffuse', ukuran: 1024, kualitas: 80 },
