@@ -470,5 +470,77 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('menghancurkan milik sendiri bukan kehilangan', me.dead && a.stat.lostU === 0 && a.losses === 0);
 }
 
+// 14. Formasi: baris & kotak menghadap arah maju, petarung jarak dekat di depan, kecepatan disamakan, tiba bersama
+{
+  const mk = () => {
+    const s = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }), m = s.map;
+    s.animals.length = 0;
+    for (let y = 36; y < 60; y++) for (let x = 30; x < 66; x++) { const i = y * 96 + x; m.terrain[i] = 0; m.node[i] = 0; m.nodeAmt[i] = 0; m.block[i] = 0; m.bld[i] = 0; }
+    BF.finishMap(m);
+    for (const p of s.players) { p.popCap = 70; p.era = 2; BF.rebuildDefs(p); }
+    return s;
+  };
+  const squad = (s, types) => types.map((t, i) => BF.spawnUnit(s, t, 0, 34 + (i % 3) * 0.9, 46 + ((i / 3) | 0) * 0.9));
+  const ids = us => us.map(u => u.id), span = (us, k) => Math.max(...us.map(u => u[k])) - Math.min(...us.map(u => u[k]));
+  const TEN = ['spear', 'archer', 'spear', 'archer', 'spear', 'archer', 'spear', 'archer', 'spear', 'spear'];
+
+  // baris ke timur: 6 tombak di barisan depan (x lebih besar), 4 pemanah satu barisan di belakangnya, semua menghadap timur
+  let s = mk(), us = squad(s, TEN);
+  BF.exec(s, 0, { c: 'move', ids: ids(us), x: 54, y: 48, f: 1 });
+  check('perintah gerak berformasi mencatat kecepatan & arah hadap formasi', us.every(u => u.order.type === 'move' && u.order.pace === Math.min(...us.map(q => BF.unitDef(s, q).speed)) && Math.abs(u.order.face) < 0.2), { pace: us[0].order.pace, face: +us[0].order.face.toFixed(2) });
+  run(s, 20 * 20);
+  let melee = us.filter(u => u.type === 'spear'), ranged = us.filter(u => u.type === 'archer');
+  check('baris: tombak di depan pemanah, lebar melintang arah maju', us.every(u => u.order.type === 'idle') && Math.min(...melee.map(u => u.x)) > Math.max(...ranged.map(u => u.x)) + 0.4 && span(melee, 'y') > 4 && span(melee, 'x') < 0.5 && span(ranged, 'x') < 0.5,
+    { depan: +Math.min(...melee.map(u => u.x)).toFixed(2), belakang: +Math.max(...ranged.map(u => u.x)).toFixed(2), lebar: +span(melee, 'y').toFixed(2) });
+  check('tiba menghadap arah maju', us.every(u => Math.abs(u.dir) < 0.2), us.map(u => +u.dir.toFixed(2)));
+  check('formasi berpusat di titik tujuan', Math.abs(us.reduce((a, u) => a + u.x, 0) / us.length - 54) < 0.6 && Math.abs(us.reduce((a, u) => a + u.y, 0) / us.length - 48) < 0.6);
+
+  // kotak ke selatan: lebih rapat daripada baris, tombak tetap di depan (y lebih besar)
+  s = mk(); us = squad(s, TEN);
+  BF.exec(s, 0, { c: 'move', ids: ids(us), x: 36, y: 56, f: 2 });
+  run(s, 20 * 16);
+  melee = us.filter(u => u.type === 'spear'); ranged = us.filter(u => u.type === 'archer');
+  check('kotak: rapat (≤ 4 lajur), tombak di depan, menghadap selatan', span(us, 'x') < 3 && span(us, 'y') > 1.5 && Math.min(...melee.map(u => u.y)) > Math.max(...ranged.map(u => u.y)) + 0.4 && us.every(u => Math.abs(u.dir - Math.PI / 2) < 0.2), { lebar: +span(us, 'x').toFixed(2), dalam: +span(us, 'y').toFixed(2) });
+
+  // kecepatan: penunggang kuda + pelontar. Bebas → kuda jauh di depan; berformasi → berjalan bersama & tiba bersamaan
+  const gap = f => {
+    const t = mk(), r = BF.spawnUnit(t, 'rider', 0, 34, 46), c = BF.spawnUnit(t, 'catapult', 0, 34, 47.2);
+    BF.exec(t, 0, { c: 'move', ids: [r.id, c.id], x: 58, y: 47, f });
+    run(t, 20 * 6);
+    const mid = r.x - c.x;
+    let tr = 0, tc = 0;
+    for (let i = 0; i < 20 * 30 && !(tr && tc); i++) { BF.step(t); t.events.length = 0; if (!tr && r.order.type === 'idle') tr = t.tick; if (!tc && c.order.type === 'idle') tc = t.tick; }
+    return { mid: +mid.toFixed(2), selisihTiba: Math.abs(tr - tc) };
+  };
+  const free = gap(0), form = gap(1);
+  check('bebas: kuda meninggalkan pelontar', free.mid > 6 && free.selisihTiba > 100, free);
+  check('berformasi: berjalan secepat unit paling lambat & tiba bersamaan', Math.abs(form.mid) < 1.5 && form.selisihTiba < 30, form);
+
+  // gerak-serang berformasi: musuh di rute diserang, lalu formasi dilanjutkan
+  s = mk(); us = squad(s, ['sword', 'sword', 'sword', 'archer', 'archer']);
+  const foe = BF.spawnUnit(s, 'worker', 1, 44, 48.5);
+  BF.exec(s, 0, { c: 'move', ids: ids(us), x: 54, y: 48, attack: true, f: 1 });
+  run(s, 20 * 30);
+  check('gerak-serang berformasi: menyerang di jalan lalu menyelesaikan formasi', foe.dead && us.every(u => u.order.type === 'idle' && u.x > 51) && Math.min(...us.filter(u => u.type === 'sword').map(u => u.x)) > Math.max(...us.filter(u => u.type === 'archer').map(u => u.x)), { musuhMati: foe.dead, x: us.map(u => +u.x.toFixed(1)) });
+
+  // validasi & kompatibilitas
+  s = mk(); us = squad(s, ['spear', 'spear', 'spear']);
+  BF.exec(s, 0, { c: 'move', ids: ids(us), x: 50, y: 48, f: 9 });
+  check('nilai formasi tak sah → gerak bebas', us.every(u => u.order.type === 'move' && u.order.pace === undefined));
+  BF.exec(s, 1, { c: 'move', ids: ids(us), x: 40, y: 40, f: 1 });
+  check('lawan tidak bisa menggerakkan unit kita dalam formasi', us.every(u => u.order.goal.x0 >= 48));
+  const a = mk(), b = mk(), ua = squad(a, TEN), ub = squad(b, TEN);
+  BF.exec(a, 0, { c: 'move', ids: ids(ua), x: 54, y: 48 });
+  BF.exec(b, 0, { c: 'move', ids: ids(ub), x: 54, y: 48, f: 0 });
+  run(a, 200); run(b, 200);
+  check('tanpa formasi (f kosong / 0): perilaku lama tidak berubah', BF.hash(a) === BF.hash(b) && ua.every(u => u.order.pace === undefined));
+  s = mk(); us = squad(s, TEN);
+  BF.exec(s, 0, { c: 'move', ids: ids(us), x: 54, y: 48, f: 2 });
+  run(s, 20 * 3);
+  const s2 = BF.deserialize(JSON.parse(JSON.stringify(BF.serialize(s))));
+  run(s, 20 * 20); run(s2, 20 * 20);
+  check('formasi di tengah jalan ikut tersimpan (lanjut setelah muat identik)', BF.hash(s) === BF.hash(s2));
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

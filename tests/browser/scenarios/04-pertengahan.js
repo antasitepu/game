@@ -45,7 +45,22 @@ module.exports = async ({ page, check }) => {
   await p.ev(`(() => { const s = BF.game.s; BF.ui.select(s.units.filter(u => u.owner === 0 && u.type !== 'worker').map(u => u.id)); })()`);
   const n = await p.ev(`BF.ui.sel.length`);
   await p.sleep(200);
-  check('panel pasukan: Gerak-Serang, Berhenti, Berlindung, Patroli, 3 sikap', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 7 && n > 0, n);
+  check('panel pasukan: 3 formasi, Gerak-Serang, Berhenti, Berlindung, Patroli, 3 sikap', (await p.ev(`document.querySelectorAll('#cmds .cmd:not(.empty)').length`)) === 10 && n > 0, n);
+  // formasi: Q = Baris, W = Kotak, E = Bebas; pilihan bertahan dan ditandai aktif di panel
+  const aktif = () => p.ev(`[...document.querySelectorAll('#cmds .cmd')].slice(0, 3).map(e => e.classList.contains('active') ? 1 : 0).join('')`);
+  check('formasi awal: Bebas (tombol E menyala)', await p.ev(`BF.ui.formation === 0`) && (await aktif()) === '001', await aktif());
+  await p.key('w', 'KeyW', 87);
+  await p.sleep(120);
+  check('W → formasi Kotak', await p.ev(`BF.ui.formation === 2`) && (await aktif()) === '010', await aktif());
+  await p.key('q', 'KeyQ', 81);
+  await p.sleep(120);
+  check('Q → formasi Baris', await p.ev(`BF.ui.formation === 1`) && (await aktif()) === '100', await aktif());
+  const lahan = await p.ev(`(() => { const s = BF.game.s, th = s.buildings.find(b => b.owner === 0 && b.type === 'townhall'); return BF.findFreeNear(s.map, th.tx + 9, th.ty + 9, 6, 0); })()`);
+  const mf = await p.ev(H.minimapPoint(String(lahan.x + 0.5), String(lahan.y + 0.5)));
+  await p.click(mf.x, mf.y, 'right');
+  await p.sleep(150);
+  const form = await p.ev(`(() => { const s = BF.game.s, us = s.units.filter(u => u.owner === 0 && u.type !== 'worker' && u.order.type === 'move'); return { n: us.length, pace: us.map(u => u.order.pace), min: Math.min(...us.map(u => BF.unitDef(s, u).speed)), face: us.map(u => u.order.face) }; })()`);
+  check('perintah gerak membawa formasi terpilih (laju bersama & arah hadap)', n < 2 || (form.n === n && form.pace.every(v => v === form.min) && form.face.every(v => typeof v === 'number' && v === form.face[0])), { n, bergerak: form.n, min: form.min });
   await p.key('a', 'KeyA', 65);
   await p.sleep(100);
   check('A → mode gerak-serang', await p.ev(`BF.ui.amove === true`));
@@ -54,6 +69,9 @@ module.exports = async ({ page, check }) => {
   await p.click(mm.x, mm.y, 'right');
   await p.sleep(150);
   check('klik kanan minimap → pasukan berangkat', (await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.type !== 'worker' && (u.order.type === 'move' || u.order.type === 'attack')).length`)) === n);
+  await p.key('e', 'KeyE', 69);
+  await p.sleep(120);
+  check('E → formasi Bebas', await p.ev(`BF.ui.formation === 0`));
 
   await p.ev(`(() => { const s = BF.game.s; s.players[0].isAI = true; for (let i = 0; i < 20 * 60 * 8 && !s.over; i++) { BF.step(s); s.events.length = 0; if (i > 600 && s.projectiles.length >= 3) break; } s.players[0].isAI = false; const f = s.units.find(u => u.order.type === 'attack'); if (f) BF.input.centerOn(f.x, f.y); s.fog.explored.fill(1); })()`);
   await p.sleep(500);

@@ -124,7 +124,7 @@ module.exports = async ({ page, check }) => {
   await p.sleep(250);
   await p.key('x', 'KeyX', 88);
   await p.sleep(350);
-  check('tombol X → sikap Bertahan, tampil di panel', await p.ev(`${ME}.stance === 1 && document.getElementById('info-body').textContent.includes('Sikap: Bertahan') && document.querySelectorAll('#cmds .cmd.active').length === 1`), await p.ev(`document.getElementById('info-body').textContent`));
+  check('tombol X → sikap Bertahan, tampil di panel', await p.ev(`${ME}.stance === 1 && document.getElementById('info-body').textContent.includes('Sikap: Bertahan') && [...document.querySelectorAll('#cmds .cmd')].slice(8, 11).map(e => e.classList.contains('active') ? 1 : 0).join('') === '010'`), await p.ev(`document.getElementById('info-body').textContent`));
   await p.key('f', 'KeyF', 70);
   await p.sleep(80);
   check('F menyalakan mode patroli', await p.ev(`BF.ui.patrol === true`));

@@ -115,7 +115,7 @@
       return;
     }
     const workers = units.filter(u => u.type === 'worker'), army = units.filter(u => u.type !== 'worker');
-    const e = t.e, move = list => { if (list.length) BF.issue({ c: 'move', ids: idsOf(list), x: t.x, y: t.y }); };
+    const e = t.e, move = list => { if (list.length) BF.issue({ c: 'move', ids: idsOf(list), x: t.x, y: t.y, f: ui.formation }); };
     BF.audio.play('order');
     if (e && e.kind === 'animal') {                       // buru: pekerja melempar tombak & menguliti, pasukan membunuh
       BF.issue({ c: 'hunt', ids: idsOf(units), aid: e.id });
@@ -183,7 +183,7 @@
   function attackMove(s, t) {
     const ids = idsOf(ownUnits(s));
     if (t.e && t.e.owner !== s.human) BF.issue({ c: 'attack', ids, tid: t.e.id });
-    else BF.issue({ c: 'move', ids, x: t.x, y: t.y, attack: true });
+    else BF.issue({ c: 'move', ids, x: t.x, y: t.y, attack: true, f: ui.formation });
     ping(t.x, t.y, '#f87171');
     BF.audio.play('order');
     ui.amove = false;

@@ -17,12 +17,41 @@
   };
 
   BF.cmd = {
-    move(s, units, x, y, attack) {
-      const n = units.length, cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols), sp = 0.9;
-      units.forEach((u, i) => {
-        const ox = ((i % cols) - (cols - 1) / 2) * sp, oy = (Math.floor(i / cols) - (rows - 1) / 2) * sp;
-        BF.setOrder(u, BF.moveOrder(s, x + ox, y + oy, attack && BF.unitDef(s, u).atk > 0, u.owner));
-      });
+    // form: indeks BF.FORMATIONS. 0/kosong = bebas (kisi tanpa arah; tiap unit dengan kecepatannya sendiri).
+    // Baris (1) dan kotak (2) menghadap arah maju — dari titik tengah kelompok ke tujuan — dan disusun per golongan:
+    // petarung jarak dekat di depan, lalu pemanah, mesin kepung, dan yang tak bersenjata. Unit yang sekarang paling depan
+    // mengisi barisan depan dan tiap barisan diurutkan kiri→kanan menurut posisi sekarang, supaya jalur tidak saling
+    // silang. Semua berjalan secepat unit paling lambat (o.pace) dan menghadap ke depan saat tiba (o.face).
+    move(s, units, x, y, attack, form) {
+      const n = units.length, sp = 0.9, F = BF.FORMATIONS[form];
+      if (!form || !F || n < 2) {
+        const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+        units.forEach((u, i) => {
+          const ox = ((i % cols) - (cols - 1) / 2) * sp, oy = (Math.floor(i / cols) - (rows - 1) / 2) * sp;
+          BF.setOrder(u, BF.moveOrder(s, x + ox, y + oy, attack && BF.unitDef(s, u).atk > 0, u.owner));
+        });
+        return;
+      }
+      let cx = 0, cy = 0, pace = Infinity;
+      for (const u of units) { cx += u.x; cy += u.y; pace = Math.min(pace, BF.unitDef(s, u).speed); }
+      let dx = x - cx / n, dy = y - cy / n;
+      const l = BF.dist(dx, dy);
+      if (l < 0.5) { dx = 0; dy = 1; } else { dx /= l; dy /= l; }
+      const px = -dy, py = dx, face = Math.atan2(dy, dx), cols = F.cols || Math.ceil(Math.sqrt(n)), groups = [[], [], [], []], rows = [];
+      for (const u of units) { const d = BF.unitDef(s, u); groups[!d.atk ? 3 : d.cls === 'siege' ? 2 : d.range > 1.5 ? 1 : 0].push(u); }
+      for (const g of groups) {
+        if (!g.length) continue;
+        g.sort((a, b) => (b.x * dx + b.y * dy) - (a.x * dx + a.y * dy) || a.id - b.id);
+        const per = Math.ceil(g.length / Math.ceil(g.length / cols));          // barisan golongan ini dibagi rata
+        for (let i = 0; i < g.length; i += per) rows.push(g.slice(i, i + per).sort((a, b) => (a.x * px + a.y * py) - (b.x * px + b.y * py) || a.id - b.id));
+      }
+      rows.forEach((row, r) => row.forEach((u, c) => {
+        const lat = (c - (row.length - 1) / 2) * sp, dep = ((rows.length - 1) / 2 - r) * sp;
+        const o = BF.moveOrder(s, x + px * lat + dx * dep, y + py * lat + dy * dep, attack && BF.unitDef(s, u).atk > 0, u.owner);
+        o.pace = pace;
+        o.face = face;
+        BF.setOrder(u, o);
+      }));
     },
 
     // Patroli: tiap unit tempur bolak-balik antara posisinya sekarang dan titik tujuan (dalam formasi seperti move).
@@ -198,7 +227,7 @@
     const units = () => (Array.isArray(c.ids) ? c.ids.slice(0, MAX_IDS) : []).map(id => own(id, 'unit')).filter(Boolean);
     const tile = (x, y) => num(x) && num(y) && BF.inBounds(x | 0, y | 0);
     switch (c.c) {
-      case 'move': if (num(c.x) && num(c.y)) BF.cmd.move(s, units(), c.x, c.y, !!c.attack); break;
+      case 'move': if (num(c.x) && num(c.y)) BF.cmd.move(s, units(), c.x, c.y, !!c.attack, c.f === 1 || c.f === 2 ? c.f : 0); break;
       case 'attack': {
         const t = s.byId.get(c.tid);
         if (t && !t.dead && t.owner !== pid) BF.cmd.attack(s, units(), t);

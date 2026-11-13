@@ -12,7 +12,7 @@
 
   // State interaksi pemain (seleksi, mode penempatan, dsb). Dibaca juga oleh render & input.
   const ui = BF.ui = {
-    sel: [], placing: null, amove: false, garrison: false, patrol: false, buildPage: 0, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
+    sel: [], placing: null, amove: false, garrison: false, patrol: false, buildPage: 0, formation: 0, drag: null, ghosts: [], wallStart: null, pings: [], groups: {},
     mouse: { x: 0, y: 0, inside: false, onMap: false },
   };
   const hud = BF.hud = { buttons: [], sig: '', hover: -1, infoAt: 0, portraitKey: '', text: {}, ERR, endNote: '', waitSince: 0 };
@@ -93,6 +93,11 @@
         };
       });
     } else if (units.length) {
+      // formasi untuk perintah gerak berikutnya: pilihan pemain, berlaku sampai diganti (Q = Baris, W = Kotak, E = Bebas)
+      [1, 2, 0].forEach((v, k) => {
+        const F = BF.FORMATIONS[v];
+        slots[k] = { glyph: ['⁘', '☰', '▦'][v], title: 'Formasi: ' + F.name, desc: F.desc, active: ui.formation === v, action() { ui.formation = v; } };
+      });
       slots[4] = {
         glyph: '⚔', title: 'Gerak-Serang', active: ui.amove,
         desc: 'Lalu klik kiri pada peta: pasukan bergerak ke sana sambil menyerang musuh yang ditemui.',

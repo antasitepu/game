@@ -38,10 +38,17 @@ BF.REPAIR = { rate: 0.75, cost: 0.5 };
 // Skor: ekonomi = sumber daya terkumpul ÷ eco; militer = nilai (biaya) unit & bangunan musuh yang dikalahkan ÷ mil;
 // teknologi = era × era + teknologi × tech. Riwayat skor dicatat tiap `every` tick untuk grafik di layar akhir.
 BF.SCORE = { eco: 10, mil: 5, era: 150, tech: 40, every: 600 };
+// Formasi untuk perintah gerak (indeks dikirim bersama perintah): bebas = kisi tanpa arah, tiap unit dengan kecepatannya
+// sendiri. Baris dan kotak menghadap arah maju, petarung jarak dekat di depan, dan berjalan secepat unit paling lambat.
+BF.FORMATIONS = [
+  { name: 'Bebas', desc: 'Tanpa formasi: tiap unit bergerak dengan kecepatannya sendiri.' },
+  { name: 'Baris', desc: 'Barisan lebar menghadap arah maju: petarung jarak dekat di depan, pemanah di belakangnya, mesin kepung paling belakang. Semua berjalan secepat unit paling lambat.', cols: 10 },
+  { name: 'Kotak', desc: 'Kelompok rapat menghadap arah maju, susunan depan-belakang sama seperti Baris. Semua berjalan secepat unit paling lambat.' },
+];
 // Sikap unit tempur saat tidak diperintah (u.stance = indeks): agresif mengejar musuh yang terlihat lalu kembali;
 // bertahan hanya menyerang yang masuk jangkauannya tanpa beranjak; diam tidak menyerang sama sekali, juga saat diserang.
 BF.STANCES = [
-  { name: 'Agresif', desc: 'Mengejar musuh yang terlihat, lalu kembali ke tempatnya.' },
+  { name: 'Agresif', desc: 'Mengejar musuh yang terlihat; bila pengejaran melewati ±10 tile, kembali ke tempat semula.' },
   { name: 'Bertahan', desc: 'Tetap di tempat; hanya menyerang musuh yang masuk jangkauan.' },
   { name: 'Diam', desc: 'Tidak menyerang kecuali diperintah, juga saat diserang.' },
 ];

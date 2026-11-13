@@ -928,16 +928,21 @@
           o.x = leg.x; o.y = leg.y; o.goal = leg.goal; o.planned = false;
         }
         break;
+      // o.pace: kecepatan formasi (unit paling lambat di kelompoknya); o.face: arah hadap formasi saat tiba
       case 'move':
-        if (travel(s, u, o, o.goal, d.speed) === 2) setIdle(u);
+        if (travel(s, u, o, o.goal, o.pace ? Math.min(d.speed, o.pace) : d.speed) === 2) {
+          if (o.face !== undefined) u.dir = o.face;
+          setIdle(u);
+        }
         break;
       case 'amove':
         if (d.atk && (s.tick + u.id) % 8 === 0) {
           const t = acquire(s, u, d);
           if (t) { u.path = null; o.planned = false; u.order = { type: 'attack', tid: t.id, resume: o }; break; }
         }
-        if (travel(s, u, o, o.goal, d.speed) === 2) {
+        if (travel(s, u, o, o.goal, o.pace ? Math.min(d.speed, o.pace) : d.speed) === 2) {
           if (o.partial) u.breach = s.tick + 120;
+          if (o.face !== undefined) u.dir = o.face;
           setIdle(u);
         }
         break;
@@ -949,7 +954,8 @@
     }
   }
 
-  // Dorong unit diam yang saling bertumpuk agar menyebar. Unit yang sedang jalan/bekerja tidak didorong.
+  // Dorong unit diam yang saling bertumpuk agar menyebar. Unit yang sedang jalan/bekerja tidak didorong dan tidak
+  // mendorong: unit yang sudah berdiri di tempatnya (mis. slot formasi) tidak tergeser oleh yang lewat.
   function separate(s) {
     const us = s.units, n = us.length, map = s.map;
     for (let i = 0; i < n; i++) {
@@ -964,21 +970,15 @@
         const dy = b.y - a.y;
         if (dy > 1 || dy < -1) continue;
         const pb = !b.moving && !b.working;
-        if (!pa && !pb) continue;
+        if (!pa || !pb) continue;                          // hanya dua unit yang sama-sama diam; yang sedang lewat tidak menggeser yang diam
         const rr = ra + UD(s, b).radius, d2 = dx * dx + dy * dy;
         if (d2 >= rr * rr) continue;
         let nx, ny, dd = Math.sqrt(d2);
         if (dd < 1e-3) { const ang = (a.id * 2.399 + b.id) % 6.283; nx = BF.qcos(ang); ny = BF.qsin(ang); dd = 0; }
         else { nx = dx / dd; ny = dy / dd; }
-        const push = (rr - dd) * 0.35, wa = pa ? (pb ? 0.5 : 1) : 0, wb = pb ? (pa ? 0.5 : 1) : 0;
-        if (wa) {
-          const x = a.x - nx * push * wa, y = a.y - ny * push * wa;
-          if (BF.passable(map, Math.floor(x), Math.floor(y), a.owner)) { a.x = x; a.y = y; }
-        }
-        if (wb) {
-          const x = b.x + nx * push * wb, y = b.y + ny * push * wb;
-          if (BF.passable(map, Math.floor(x), Math.floor(y), b.owner)) { b.x = x; b.y = y; }
-        }
+        const push = (rr - dd) * 0.35 * 0.5, ax = a.x - nx * push, ay = a.y - ny * push, bx = b.x + nx * push, by = b.y + ny * push;
+        if (BF.passable(map, Math.floor(ax), Math.floor(ay), a.owner)) { a.x = ax; a.y = ay; }
+        if (BF.passable(map, Math.floor(bx), Math.floor(by), b.owner)) { b.x = bx; b.y = by; }
       }
     }
   }
