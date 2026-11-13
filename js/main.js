@@ -79,7 +79,7 @@
           if (!BF.net.advance(s)) { acc = Math.min(acc, BF.DT); break; } // menunggu paket lawan
           acc -= BF.DT;
           n++;
-          if (!s.mp && !s.over && s.tick % AUTOSAVE_TICKS === 0) BF.save.write('auto', s);
+          if (!s.mp && !s.tutorial && !s.over && s.tick % AUTOSAVE_TICKS === 0) BF.save.write('auto', s);
         }
         if (acc > BF.DT * 8) acc = 0;
       }

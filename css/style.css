@@ -185,6 +185,16 @@ p { margin: 0 0 6px; color: #d8cfb6; }
 table { border-collapse: collapse; width: 100%; }
 td { padding: 4px 8px 4px 0; vertical-align: top; color: #d8cfb6; border-bottom: 1px solid rgba(255, 255, 255, .06); }
 td:first-child { color: #f4dfa0; font-weight: 600; white-space: nowrap; }
+/* panel tutorial: satu langkah petunjuk di kiri atas */
+#tutorial { position: fixed; top: 52px; left: 12px; z-index: 6; width: 300px; padding: 10px 12px 9px; background: rgba(22, 17, 11, .94); border: 1px solid #7d6642; border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, .5); }
+#tutorial.done { border-color: #86c06c; }
+#tut-step { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #b9ad90; }
+#tut-title { margin: 2px 0 4px; font-size: 16px; font-weight: 700; color: #f4dfa0; }
+#tutorial.done #tut-title { color: #a6dc8c; }
+#tut-text { margin: 0 0 8px; line-height: 1.45; color: #d8cfb6; }
+#tut-close { padding: 2px 8px; font-size: 12px; color: #b9ad90; background: transparent; border: 1px solid #5d4c33; border-radius: 5px; }
+#tut-close:hover { color: #ece5d2; border-color: #7d6642; }
+
 /* layar akhir: tabel statistik dua pemain + grafik skor */
 .card.end { width: min(1000px, 100%); }
 .card.end .tagline { margin-bottom: 14px; }
