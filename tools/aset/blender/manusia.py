@@ -119,9 +119,10 @@ class Tokoh:
         m['logam'] = logam
         return m
 
-    def kain(self, nama, gbr, ulang, gelap, terang, jahitan=0.0, kasar=0.85, logam=0.0):
+    def kain(self, nama, gbr, ulang, gelap, terang, jahitan=0.0, kasar=0.85, logam=0.0, perut=None):
         """Tekstur tenun diproyeksikan kotak, dijadikan hitam-putih, lalu dipetakan ke dua warna (gelap → terang).
-        jahitan > 0: garis jahitan tegak tiap `jahitan` meter (baju berlapis kapas). logam > 0: anyaman logam (zirah rantai)."""
+        jahitan > 0: garis jahitan tegak tiap `jahitan` meter (baju berlapis kapas). logam > 0: anyaman logam (zirah rantai).
+        perut = (z0, z1, warna): di bawah tinggi z0 warnanya menjadi `warna`, memudar sampai z1 (perut pucat pada hewan)."""
         m = self.bahan(nama, kasar=kasar, logam=logam)
         nt, b = m.node_tree, next(n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
         px = np.empty(gbr.size[0] * gbr.size[1] * 4, np.float32)
@@ -153,6 +154,16 @@ class Tokoh:
                          (warna, kali.inputs[6]), (rp2.outputs['Color'], kali.inputs[7])):
                 nt.links.new(a, z)
             warna = kali.outputs[2]
+        if perut:
+            z0, z1, pucat = perut
+            sx, mr, cm = nt.nodes.new('ShaderNodeSeparateXYZ'), nt.nodes.new('ShaderNodeMapRange'), nt.nodes.new('ShaderNodeMix')
+            for k, v in (('From Min', z0), ('From Max', z1), ('To Min', 1.0), ('To Max', 0.0)):
+                mr.inputs[k].default_value = v
+            cm.data_type = 'RGBA'
+            cm.inputs[7].default_value = (*[lin(c) for c in pucat], 1)
+            for a, z in ((tc.outputs['Object'], sx.inputs['Vector']), (sx.outputs['Z'], mr.inputs['Value']), (mr.outputs['Result'], cm.inputs[0]), (warna, cm.inputs[6])):
+                nt.links.new(a, z)
+            warna = cm.outputs[2]
         nt.links.new(warna, b.inputs['Base Color'])
         return m
 
@@ -724,13 +735,13 @@ class Tokoh:
             ('gesper', 'tunik', None), ('gesper', 'rok', None), ('selempang', 'dada', None), ('mantel', 'dada', None), ('tali_tas', 'tunik', None),
             ('pelat_kakiL', 'sepatuL', None), ('pelat_kakiR', 'sepatuR', None))
 
-    def gerakkan(self, klip, glb, tiru=None, lihat=None, tulang_lain=(), kelompok=None, peraga=None):
+    def gerakkan(self, klip, glb, tiru=None, lihat=None, tulang_lain=(), kelompok=None, peraga=None, manusia=True):
         """klip: [(nama, jumlah frame, fungsi(P, p))]. tiru: [(bagian sasaran, bagian sumber, rentang_z)], bawaan TIRU untuk
         bagian yang ada. lihat: opsi lembar kontak per klip {nama: {…}} atau {'*': {…}} untuk semua.
         tulang_lain: tulang tambahan (mis. kerangka kuda) sebagai (nama, induk, pangkal, ujung); tulang akar manusia
         diikat ke induk_manusia bila peraga menyebutkannya. kelompok: [(awalan nama tulang, nama-nama bagian)] = bobot
         otomatis dihitung per kelompok (penunggang terhadap tulangnya sendiri, kuda terhadap tulang kuda).
-        peraga: opsi Peraga (kaki=…, lengan=…) dan 'induk_manusia'."""
+        peraga: opsi Peraga (kaki=…, lengan=…) dan 'induk_manusia'. manusia=False: tanpa kerangka manusia (hewan)."""
         sc, ob, me, B = self.sc, self.ob, self.ob.data, self.bagian
         peraga = dict(peraga or {})
         induk_manusia = peraga.pop('induk_manusia', None)
@@ -740,10 +751,13 @@ class Tokoh:
         for b in B:
             if b['kaku']:
                 kaku.setdefault(b['kaku'], []).extend(self.di(b['nama']))
-        kaku.setdefault('Head', []).extend(i for i in self.di('kepala') if me.vertices[i].co.z > 1.475 + self.geser.z - self.dasar)   # kepala di atas dagu kaku
-        turun = Vector((0, 0, self.dasar))
-        manusia = [(n, i or induk_manusia, h + self.geser, t + self.geser) for n, i, h, t in sendi({k: self.LENGAN[k][:2] for k in (1, -1)}, turun=self.dasar, kaki_x=self.KAKI_X)]
-        arm = self.arm = buat_kerangka([(n, i, Vector(h) - turun, Vector(t) - turun) for n, i, h, t in tulang_lain] + manusia)
+        turun, orang = Vector((0, 0, self.dasar)), []
+        if manusia:
+            kaku.setdefault('Head', []).extend(i for i in self.di('kepala') if me.vertices[i].co.z > 1.475 + self.geser.z - self.dasar)   # kepala di atas dagu kaku
+            orang = [(n, i or induk_manusia, h + self.geser, t + self.geser) for n, i, h, t in sendi({k: self.LENGAN[k][:2] for k in (1, -1)}, turun=self.dasar, kaki_x=self.KAKI_X)]
+        else:
+            peraga.setdefault('lengan', {})
+        arm = self.arm = buat_kerangka([(n, i, Vector(h) - turun, Vector(t) - turun) for n, i, h, t in tulang_lain] + orang)
         grup = [([b.name for b in arm.data.bones if b.name.startswith(awalan)], self.di(*bagian)) for awalan, bagian in kelompok] if kelompok else None
         self.catatan += ikat(ob, arm, kaku, tiru=[(self.di(a), self.di(b), r) for a, b, r in tiru], kelompok=grup)
         P = self.P = Peraga(arm, **peraga)

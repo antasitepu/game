@@ -54,7 +54,8 @@ Unit butuh animasi (diam, jalan, lari, bekerja, menyerang, mati). Perintah dijal
 membangun tubuh, pakaian, atlas tekstur (warna + bayangan lembut, dan peta kekasaran/logam bila ada besi), kerangka 21
 tulang, bobot, dan klip gerak. Tiap unit punya skrip pendek yang memilih pakaian, perlengkapan, dan klipnya. Unit berkuda
 memakai `kuda.py` juga: kuda dan penunggang menjadi satu mesh dan satu kerangka (40 tulang; 19 tulang kuda berawalan
-`Horse`, tulang penunggang di bawah `HorseSpine`):
+`Horse`, tulang penunggang di bawah `HorseSpine`). Kerangka dan gaya jalan kaki empat ada di `hewan.py`, dipakai kuda dan
+hewan liar (19 tulang berawalan `Beast`, tanpa bahan tim):
 
 | Unit | Skrip | Klip |
 |---|---|---|
@@ -68,6 +69,8 @@ memakai `kuda.py` juga: kuda dan penunggang menjadi satu mesh dan satu kerangka 
 | `tabib` | `tabib.py` | diam, jalan, lari, kerja (menyembuhkan; 1,4 detik, berulang), mati |
 | `penunggang` | `penunggang.py` + `kuda.py` | diam, jalan, lari (derap cepat), serang (tusukan dari pelana, kena di 0,35 detik), mati |
 | `pemanah_kuda` | `pemanah_kuda.py` + `kuda.py` | diam, jalan, lari, serang (memanah dari pelana, lepas di 0,58 detik), mati |
+| `rusa`, `rusa_jantan` | `rusa.py` (`--jantan`) + `hewan.py` | diam, jalan, lari, makan (berulang), mati |
+| `babi` | `babi.py` + `hewan.py` | diam, jalan, lari, makan (berulang), serang (seruduk, puncak di 0,28 detik), mati |
 
 1. `blender -b --factory-startup --python tools/aset/blender/<unit>.py -- tools/aset/sumber/<unit>`
    Hasilnya `tools/aset/sumber/<unit>.glb` (berkerangka dan beranimasi) serta pratinjau PNG di folder itu, termasuk

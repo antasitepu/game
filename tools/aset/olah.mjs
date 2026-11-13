@@ -61,6 +61,10 @@ const RESEP = {
   // Unit berkuda: kuda dan penunggang satu mesh dan satu kerangka (40 tulang); titik asal di tanah di bawah HorseRoot.
   penunggang: { jenis: 'kerangka', sumber: 'penunggang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
   pemanah_kuda: { jenis: 'kerangka', sumber: 'pemanah_kuda', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000] },
+  // Hewan liar: kerangka berkaki empat berawalan Beast, tanpa bahan tim; skala sama dengan unit manusia.
+  rusa: { jenis: 'kerangka', sumber: 'rusa', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800] },
+  rusa_jantan: { jenis: 'kerangka', sumber: 'rusa_jantan', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1900] },
+  babi: { jenis: 'kerangka', sumber: 'babi', lokal: true, skala: 0.86 / 1.771, tekstur: 256, lod: [1800] },
 };
 const TEKSTUR = {
   rumput: { sumber: 'forrest_ground_01', peta: 'Diffuse', ukuran: 1024, kualitas: 80 },

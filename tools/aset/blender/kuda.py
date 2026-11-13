@@ -2,32 +2,31 @@
 #   bangun(T, …)   menambahkan bagian-bagian kuda ke tokoh T (badan, kaki, kuku, surai, ekor, pelana, selimut pelana bertim)
 #   sendi()        kerangka kuda, 19 tulang berawalan Horse; tulang Hips penunggang menjadi anak HorseSpine
 #   KAKI           rantai IK keempat kaki untuk Peraga (kunci FL, FR, HL, HR)
-#   diam, jalan, lari, rebah   gerak kuda;   duduk   sikap penunggang di pelana
+#   diam, jalan, lari, rebah   gerak kuda (dari hewan.py dengan bentuk KUDA);   duduk   sikap penunggang di pelana
 # Koordinat seperti manusia.py: meter, Z ke atas, depan = −Y. Tinggi gumba ±1,5 m; pelana di (0, 0, 1,55).
 import bmesh, math
-from mathutils import Quaternion, Vector
-from manusia import X, Y, Z, rad, halus, naik, lerp, tabung, elips, SISI
+from mathutils import Vector
+import hewan as hw
+from manusia import X, Y, Z, rad, tabung, elips, SISI
 
 X_DEPAN, X_BELAKANG = 0.14, 0.15
 DUDUK = Vector((0, 0.04, 0.70))                             # geser tokoh manusia berdiri → pinggul di atas pelana
 # pangkal ruas kaki: (depan-belakang, tinggi) siku/lutut atas, lutut/tumit, pergelangan, ujung kuku
 DEPAN = ((-0.41, 1.02), (-0.435, 0.52), (-0.42, 0.14), (-0.47, 0.02))
 BELAKANG = ((0.50, 1.02), (0.62, 0.58), (0.56, 0.14), (0.51, 0.02))
-KAKI = {'FL': ('HorseFrontL2', 'HorseFrontL3', (0, -0.8, 0)), 'FR': ('HorseFrontR2', 'HorseFrontR3', (0, -0.8, 0)),
-        'HL': ('HorseHindL2', 'HorseHindL3', (0, 0.8, 0)), 'HR': ('HorseHindR2', 'HorseHindR3', (0, 0.8, 0))}
+KUDA = {'pre': 'Horse', 'u': 1.0,                           # bentuk kuda untuk hewan.py
+        'tulang': {'Root': ((0, 0.05, 1.20), (0, 0.05, 1.32)), 'Spine': ((0, 0.05, 1.22), (0, -0.10, 1.22)), 'Chest': ((0, -0.10, 1.22), (0, -0.50, 1.26)),
+                   'Hip': ((0, 0.15, 1.22), (0, 0.66, 1.26)), 'Neck': ((0, -0.46, 1.34), (0, -0.92, 1.88)), 'Head': ((0, -0.92, 1.88), (0, -1.22, 1.54)),
+                   'Tail': ((0, 0.80, 1.20), (0, 0.92, 0.62))},
+        'x_depan': X_DEPAN, 'x_belakang': X_BELAKANG, 'depan': DEPAN, 'belakang': BELAKANG,
+        'jalan': (0.62, 0.35, 0.13, 0.10), 'lari': (0.25, 0.45, 0.36, 0.30), 'rebah': 0.29}
+KAKI = hw.kaki(KUDA)
 KELOMPOK = lambda bagian_manusia, bagian_kuda: [('Horse', bagian_kuda), ('', bagian_manusia)]
-
-
-def sendi():
-    T = [('HorseRoot', None, (0, 0.05, 1.20), (0, 0.05, 1.32)), ('HorseSpine', 'HorseRoot', (0, 0.05, 1.22), (0, -0.10, 1.22)),
-         ('HorseChest', 'HorseSpine', (0, -0.10, 1.22), (0, -0.50, 1.26)), ('HorseHip', 'HorseSpine', (0, 0.15, 1.22), (0, 0.66, 1.26)),
-         ('HorseNeck', 'HorseChest', (0, -0.46, 1.34), (0, -0.92, 1.88)), ('HorseHead', 'HorseNeck', (0, -0.92, 1.88), (0, -1.22, 1.54)),
-         ('HorseTail', 'HorseHip', (0, 0.80, 1.20), (0, 0.92, 0.62))]
-    for s, k in SISI:
-        for nama, induk, x, titik in (('HorseFront', 'HorseChest', k * X_DEPAN, DEPAN), ('HorseHind', 'HorseHip', k * X_BELAKANG, BELAKANG)):
-            for i in range(3):
-                T.append((nama + s[0] + str(i + 1), nama + s[0] + str(i) if i else induk, (x, *titik[i]), (x, *titik[i + 1])))
-    return T
+sendi = lambda: hw.sendi(KUDA)
+diam = lambda P, p: hw.diam(P, p, KUDA)                     # 1,13 m per putaran jalan, 3,6 m per putaran lari (pada model)
+jalan = lambda P, p: hw.jalan(P, p, KUDA)
+lari = lambda P, p: hw.lari(P, p, KUDA)
+rebah = lambda P, p: hw.rebah(P, p, KUDA)
 
 
 def bangun(T, bulu, surai, kuku, pelana, selimut, mata):
@@ -82,82 +81,6 @@ def bangun(T, bulu, surai, kuku, pelana, selimut, mata):
     elips(bm, (0, 0.24, 1.54), (0.13, 0.05, 0.06), seg=8, ring=6)                                          # sandaran belakang
     T.tambah('pelana', bm, pelana, kaku='HorseSpine')
     return [b['nama'] for b in T.bagian[sebelum:]]
-
-
-# ---------------------------------------------------------------- gerak kuda
-
-def tapak(q, lama, depan, belakang, angkat):
-    """Lintasan satu kuku di tempat: fase q 0..1; menapak selama `lama` (mundur dari −depan ke +belakang), lalu mengayun."""
-    if q < lama:
-        u = q / lama
-        lepas = max(0.0, (u - 0.75) / 0.25)
-        return -depan + (depan + belakang) * u, 0.025 * lepas, rad(28) * lepas
-    u = (q - lama) / (1 - lama)
-    e = halus(u)
-    return belakang - (depan + belakang) * e, 0.025 * (1 - u) + angkat * math.sin(math.pi * u ** 0.8), rad(lerp(28, -6, e) + 34 * math.sin(math.pi * u))
-
-
-def diam(P, p):
-    """Berdiri: napas, kepala mengangguk pelan, ekor mengibas, satu kaki belakang diistirahatkan di ujung kuku."""
-    s1, s2 = math.sin(2 * math.pi * p), math.sin(4 * math.pi * p + 0.6)
-    P.telapak('HR', (0.01, 0.03, 0.045), rad(32))
-    P.pb['HorseRoot'].location = P.rq['HorseRoot'].inverted() @ Vector((0.012, 0, -0.008 + 0.004 * s1))
-    P.fk('HorseHip', ('Y', rad(-2.5)))
-    P.fk('HorseNeck', ('X', rad(5 + 3 * s1)))
-    P.fk('HorseHead', ('X', rad(-4 - 2 * s1 + 1.5 * s2)), ('Z', rad(4 * s2)))
-    P.fk('HorseTail', ('X', rad(-4)), ('Z', rad(14 * s2)))
-
-
-def jalan(P, p):
-    """Jalan empat ketukan (kiri belakang, kiri depan, kanan belakang, kanan depan): 1,13 m per putaran pada model."""
-    for s, fase in (('HL', 0.0), ('FL', 0.25), ('HR', 0.5), ('FR', 0.75)):
-        y, z, jungkit = tapak((p + 1 - fase) % 1.0, 0.62, 0.35, 0.35, 0.13 if s[0] == 'F' else 0.10)
-        P.telapak(s, (0, y, z), jungkit)
-    c2, s2 = math.cos(4 * math.pi * p), math.sin(4 * math.pi * p)
-    P.pb['HorseRoot'].location = P.rq['HorseRoot'].inverted() @ Vector((0.012 * math.sin(2 * math.pi * p), 0, -0.035 + 0.012 * c2))
-    P.fk('HorseSpine', ('X', rad(0.8 * s2)))
-    P.fk('HorseHip', ('Z', rad(3 * math.sin(2 * math.pi * p))), ('Y', rad(2.5 * math.cos(2 * math.pi * p))))
-    P.fk('HorseChest', ('Z', rad(-2.5 * math.sin(2 * math.pi * p + 1.2))))
-    P.fk('HorseNeck', ('X', rad(6 + 4 * c2)))
-    P.fk('HorseHead', ('X', rad(-5 - 3 * c2)))
-    P.fk('HorseTail', ('X', rad(-6)), ('Z', rad(9 * math.sin(2 * math.pi * p))))
-    return c2
-
-
-def lari(P, p):
-    """Derap cepat (galop) dengan saat melayang: kaki belakang mendarat dulu, lalu kaki depan; 3,6 m per putaran."""
-    for s, fase in (('HL', 0.0), ('HR', 0.10), ('FL', 0.36), ('FR', 0.46)):
-        y, z, jungkit = tapak((p + 1 - fase) % 1.0, 0.25, 0.45, 0.45, 0.36 if s[0] == 'F' else 0.30)
-        P.telapak(s, (0, y - (0.05 if s[0] == 'H' else -0.04), z), jungkit)
-    a = 2 * math.pi * (p - 0.10)
-    angguk = -7 * math.cos(a)                                # hidung naik saat kaki belakang menapak, turun saat kaki depan menapak
-    P.pb['HorseRoot'].location = P.rq['HorseRoot'].inverted() @ Vector((0, 0, -0.10 + 0.07 * math.sin(2 * math.pi * (p - 0.55))))
-    P.fk('HorseRoot', ('X', rad(angguk)))
-    P.fk('HorseHip', ('X', rad(-5 * math.cos(a))))
-    P.fk('HorseChest', ('X', rad(4 * math.cos(a))))
-    P.fk('HorseNeck', ('X', rad(16 - 0.8 * angguk + 5 * math.sin(a))))
-    P.fk('HorseHead', ('X', rad(-14 + 4 * math.cos(a))))
-    P.fk('HorseTail', ('X', rad(-48 + 10 * math.sin(a))))
-    return angguk
-
-
-def rebah(P, p):
-    """Kaki tertekuk lalu kuda rebah ke sisi kanannya; kuku menapak (IK) selama berlutut, lalu kaki terlipat di bawah
-    badan. Hasil: (tekuk, guling) untuk penunggangnya."""
-    a, b = naik(p, 0.0, 0.40), naik(p, 0.25, 0.85)
-    P.ik(1 - naik(p, 0.22, 0.46))
-    lipat = naik(p, 0.05, 0.42) * (1 - 0.35 * naik(p, 0.8, 1.0))      # lipatan kaki mengikuti turunnya badan
-    P.pb['HorseRoot'].location = P.rq['HorseRoot'].inverted() @ Vector((-0.10 * b, 0, -0.40 * a - 0.51 * b))
-    P.fk('HorseRoot', ('Y', rad(-86 * b)), ('X', rad(4 * a)))
-    P.fk('HorseNeck', ('X', rad(-14 * a + 30 * b)), ('Z', rad(-10 * b)))
-    P.fk('HorseHead', ('X', rad(10 * a - 20 * b)))
-    P.fk('HorseTail', ('X', rad(-20 * b)))
-    for s, _ in SISI:
-        P.fk('HorseFront' + s[0] + '1', ('X', rad(-72 * lipat)))
-        P.fk('HorseFront' + s[0] + '2', ('X', rad(138 * lipat)))
-        P.fk('HorseHind' + s[0] + '1', ('X', rad(52 * lipat)))
-        P.fk('HorseHind' + s[0] + '2', ('X', rad(-112 * lipat)))
-    return a, b
 
 
 # ---------------------------------------------------------------- penunggang
