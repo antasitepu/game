@@ -98,6 +98,24 @@
     return true;
   }
 
+  // Perbaikan: satu bangunan rusak (nyawa < 65%, bukan tembok) per giliran, hanya bila tak ada musuh dalam 8 tile dan
+  // stok bahan bangunannya masih ≥ 40; dikerjakan 2 pekerja terdekat (3 untuk bangunan besar) yang tidak sedang menyetor.
+  function repairs(s, p, c) {
+    for (const b of s.buildings) {
+      if (b.owner !== p.id || b.dead || !b.built || BF.BUILDINGS[b.type].barrier) continue;
+      const max = p.B[b.type].hp, cx = b.tx + b.size / 2, cy = b.ty + b.size / 2;
+      if (b.hp >= max * 0.65) continue;
+      if (Object.keys(p.B[b.type].cost).some(r => p.res[r] < 40)) continue;
+      if (s.units.some(u => u.owner !== p.id && !u.dead && dist(u.x - cx, u.y - cy) < 8)) continue;
+      const want = (b.size >= 3 ? 3 : 2) - c.workers.filter(w => w.order.type === 'repair' && w.order.bid === b.id).length;
+      if (want <= 0) continue;
+      const pool = c.workers.filter(w => w.order.type === 'idle' || (w.order.type === 'gather' && w.order.state !== 'return'))
+        .sort((a, b2) => dist(a.x - cx, a.y - cy) - dist(b2.x - cx, b2.y - cy)).slice(0, want);
+      if (pool.length) BF.cmd.repair(s, pool, b);
+      return;
+    }
+  }
+
   function census(s, p) {
     const c = { workers: [], army: [], idle: [], cnt: { food: 0, wood: 0, gold: 0, stone: 0 }, own: {}, pending: [], types: {} };
     for (const u of s.units) {
@@ -294,6 +312,7 @@
       if (w) BF.cmd.build(s, [w], b);
     }
 
+    repairs(s, p, c);
     economy(s, p, ai, c);
 
     let queuedWorkers = 0;

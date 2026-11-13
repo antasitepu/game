@@ -218,6 +218,7 @@
       case 'amove': return 'Gerak-serang';
       case 'attack': return 'Menyerang';
       case 'build': return 'Membangun';
+      case 'repair': return 'Memperbaiki';
       case 'gather': return o.state === 'return' ? 'Menyetor ' + BF.RES_LABEL[o.res] : o.animal ? (o.state === 'work' ? 'Menguliti buruan' : 'Berburu') : 'Mengumpulkan ' + BF.RES_LABEL[o.res];
       default: return 'Menganggur';
     }
@@ -263,7 +264,11 @@
         pk = 'building:' + e.type + ':' + e.owner;
         html = head(d.name) + hpHtml(e.hp, d.hp) + (d.atk ? combatHtml(d) : '');
         if (!e.built) html += `<div class="status">Sedang dibangun: ${Math.floor(e.progress * 100)}%</div>`;
-        else if (e.owner === me) {
+        else if (e.owner === me && e.hp < d.hp) {                                     // rusak: siapa yang memperbaiki, atau caranya
+          const n = s.units.filter(u => !u.dead && u.owner === me && u.order.type === 'repair' && u.order.bid === e.id).length;
+          html += n ? `<div class="status">Sedang diperbaiki · ${n} pekerja</div>` : '<div class="status warn">Rusak — pilih pekerja lalu klik kanan bangunan ini untuk memperbaiki</div>';
+        }
+        if (e.built && e.owner === me) {
           if (e.queue.length) {
             html += '<div class="queue">' + e.queue.map((q, i) => {
               const total = q.unit ? p.U[q.unit].time : q.time;
@@ -298,6 +303,7 @@
       if (e.type === 'attacked' && e.owner === me) hud.toast('Kita diserang!');
       else if (e.type === 'era') hud.toast(e.owner === me ? 'Kita memasuki ' + BF.ERAS[e.era].name + '!' : 'Musuh memasuki ' + BF.ERAS[e.era].name);
       else if (e.type === 'tech' && e.owner === me) hud.toast('Riset selesai: ' + BF.TECHS[e.tech].name);
+      else if (e.type === 'repairStop' && e.owner === me) hud.toast('Perbaikan berhenti: ' + ERR.res.toLowerCase());
       else if (e.type === 'over') hud.showEnd(s, e.resigned);
     }
     s.events.length = 0;

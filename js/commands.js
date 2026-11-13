@@ -50,6 +50,11 @@
       for (const u of units) if (u.type === 'worker') BF.setOrder(u, { type: 'build', bid: b.id });
     },
 
+    // Perbaiki bangunan sendiri yang sudah jadi (sim.js menghentikannya bila nyawa penuh atau stok habis).
+    repair(s, units, b) {
+      for (const u of units) if (u.type === 'worker') BF.setOrder(u, { type: 'repair', bid: b.id });
+    },
+
     // Setor bawaan ke bangunan tertentu.
     dropoff(s, units, b) {
       for (const u of units)
@@ -170,6 +175,7 @@
       case 'hunt': { const a = s.byId.get(c.aid); if (a && !a.dead && a.kind === 'animal') BF.cmd.hunt(s, units(), a); break; }
       case 'farm': { const f = own(c.bid, 'building'); if (f && f.type === 'farm' && f.built) BF.cmd.farm(s, units(), f); break; }
       case 'build': { const b = own(c.bid, 'building'); if (b && !b.built) BF.cmd.build(s, units(), b); break; }
+      case 'repair': { const b = own(c.bid, 'building'); if (b && b.built) BF.cmd.repair(s, units(), b); break; }
       case 'dropoff': { const b = own(c.bid, 'building'); if (b && b.built && BF.BUILDINGS[b.type].dropoff) BF.cmd.dropoff(s, units(), b); break; }
       case 'stop': BF.cmd.stop(s, units()); break;
       case 'place': {

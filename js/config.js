@@ -32,6 +32,9 @@ BF.ANIMALS = {
   deer: { name: 'Rusa', hp: 12, food: 140, speed: 0.9, run: 3.3, radius: 0.28, herd: 3 },
   boar: { name: 'Babi Hutan', hp: 36, food: 300, speed: 0.7, run: 2.7, radius: 0.3, herd: 1, atk: 3, cooldown: 1.2 },
 };
+// Perbaikan bangunan oleh pekerja: tiap pekerja memulihkan nyawa secepat rate × laju membangun bangunan itu, dan
+// memulihkan nyawa dari nol sampai penuh menghabiskan cost × biaya bangunannya (ditagih sedikit demi sedikit).
+BF.REPAIR = { rate: 0.75, cost: 0.5 };
 // Tombak lempar pekerja saat berburu.
 BF.HUNT = { atk: 4, range: 2.6, cooldown: 1.5 };
 

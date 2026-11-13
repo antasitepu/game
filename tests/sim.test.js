@@ -158,5 +158,37 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('babi hutan menyeruduk balik pemburu tunggal', w.dead || w.hp < BF.UNITS.worker.hp, { hpPekerja: w.dead ? 0 : w.hp, hpBabi: boar.hp });
 }
 
+// 8. Perbaikan bangunan: nyawa pulih, biaya ±50% biaya bangunan untuk perbaikan penuh, berhenti saat stok habis,
+//    perintah tervalidasi, dan AI memperbaiki bangunannya sendiri
+{
+  const mk = () => { const s = BF.newGame({ seed: 4202, ai: [false, false], factions: ['padang', 'bara'] }); s.animals.length = 0; return s; };
+  const s = mk(), p = s.players[0], th = s.buildings.find(b => b.owner === 0 && b.type === 'townhall'), max = BF.bldDef(s, th).hp;
+  const ws = s.units.filter(u => u.owner === 0 && u.type === 'worker'), ids = ws.map(u => u.id);
+  th.hp = 1;
+  p.res = { food: 0, wood: 1000, gold: 0, stone: 1000 };
+  BF.exec(s, 1, { c: 'repair', ids, bid: th.id });
+  check('tidak bisa menyuruh pekerja lawan memperbaiki', ws.every(u => u.order.type === 'idle'));
+  BF.exec(s, 0, { c: 'repair', ids, bid: th.id });
+  run(s, 20 * 120);
+  const used = { wood: 1000 - p.res.wood, stone: 1000 - p.res.stone }, c = BF.BUILDINGS.townhall.cost;
+  check('perbaikan penuh: nyawa kembali utuh, pekerja menganggur lagi', th.hp === max && ws.every(u => u.order.type === 'idle'), { hp: th.hp, max });
+  check('biaya perbaikan penuh ≈ 50% biaya bangunan', Math.abs(used.wood - c.wood * 0.5) <= 2 && Math.abs(used.stone - c.stone * 0.5) <= 2, used);
+
+  const s2 = mk(), p2 = s2.players[0], th2 = s2.buildings.find(b => b.owner === 0 && b.type === 'townhall');
+  th2.hp = 100;
+  p2.res = { food: 0, wood: 20, gold: 0, stone: 1000 };
+  const ws2 = s2.units.filter(u => u.owner === 0 && u.type === 'worker');
+  BF.exec(s2, 0, { c: 'repair', ids: ws2.map(u => u.id), bid: th2.id });
+  let stop = false;
+  for (let i = 0; i < 20 * 120; i++) { BF.step(s2); if (s2.events.some(e => e.type === 'repairStop' && e.owner === 0)) stop = true; s2.events.length = 0; }
+  check('stok habis → perbaikan berhenti & pemilik diberi tahu', stop && th2.hp < BF.bldDef(s2, th2).hp && p2.res.wood >= 0 && ws2.every(u => u.order.type === 'idle'), { hp: Math.round(th2.hp), kayu: p2.res.wood });
+
+  const s3 = mk(), p3 = s3.players[1], th3 = s3.buildings.find(b => b.owner === 1 && b.type === 'townhall'), max3 = BF.bldDef(s3, th3).hp;
+  p3.isAI = true;
+  th3.hp = max3 * 0.3;
+  run(s3, 20 * 60);
+  check('AI memperbaiki balai kotanya yang rusak', th3.hp > max3 * 0.5, { dari: Math.round(max3 * 0.3), ke: Math.round(th3.hp) });
+}
+
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);
 process.exit(fail ? 1 : 0);

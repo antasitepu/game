@@ -130,6 +130,7 @@
       const carriers = workers.filter(u => u.carry > 0), wids = idsOf(workers);
       if (!e.built) BF.issue({ c: 'build', ids: wids, bid: e.id });
       else if (e.type === 'farm') BF.issue({ c: 'farm', ids: wids, bid: e.id });
+      else if (e.hp < BF.bldDef(s, e).hp) BF.issue({ c: 'repair', ids: wids, bid: e.id });          // rusak → perbaiki
       else if (B[e.type].dropoff && carriers.length) BF.issue({ c: 'dropoff', ids: idsOf(carriers), bid: e.id });
       else move(workers);
       move(army);

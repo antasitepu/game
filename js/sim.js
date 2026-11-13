@@ -758,6 +758,38 @@
     if (b.progress >= 1) { completeBuilding(s, b); afterBuild(s, u, b); }
   }
 
+  // Perbaikan: pekerja mendatangi bangunan sendiri yang rusak lalu memulihkan nyawanya. Biayanya dicatat sebagai utang
+  // pecahan di bangunan (b.owe, dipakai bersama semua tukangnya) dan ditagih per satuan bulat; bila stok tidak cukup,
+  // perbaikan berhenti dan pemilik diberi tahu (event repairStop, paling sering sekali per 5 detik).
+  function updateRepair(s, u, d, o) {
+    const b = s.byId.get(o.bid), p = s.players[u.owner];
+    if (!b || b.dead || !b.built || b.owner !== u.owner) { setIdle(u); return; }
+    const bd = BD(s, b);
+    if (b.hp >= bd.hp) { b.hp = bd.hp; setIdle(u); return; }
+    if (o.state !== 'work') {
+      if (travel(s, u, o, BF.bRect(b, 1), d.speed) === 2) {
+        if (BF.distToBuilding(b, u.x, u.y) < 1.7) o.state = 'work'; else setIdle(u);
+      }
+      return;
+    }
+    if (BF.distToBuilding(b, u.x, u.y) > 1.9) { o.state = 'go'; o.planned = false; return; }   // terdorong menjauh
+    const hp = Math.min(bd.hp - b.hp, bd.hp * DT / bd.time * BF.REPAIR.rate), owe = Object.assign({}, b.owe), bill = {};
+    for (const r in bd.cost) {
+      owe[r] = (owe[r] || 0) + bd.cost[r] * BF.REPAIR.cost * hp / bd.hp;
+      if (owe[r] >= 1) bill[r] = Math.floor(owe[r]);
+    }
+    if (!BF.canAfford(p, bill)) {
+      if (s.tick - (p.repairWarn || -1e9) > 100) { p.repairWarn = s.tick; s.events.push({ type: 'repairStop', owner: u.owner, x: b.tx + b.size / 2, y: b.ty + b.size / 2 }); }
+      setIdle(u);
+      return;
+    }
+    for (const r in bill) { p.res[r] -= bill[r]; owe[r] -= bill[r]; }
+    b.owe = owe;
+    b.hp += hp;
+    u.working = true;
+    u.dir = Math.atan2(b.ty + b.size / 2 - u.y, b.tx + b.size / 2 - u.x);
+  }
+
   // ---------------------------------------------------------------- update
 
   function updateUnit(s, u) {
@@ -791,6 +823,7 @@
       case 'attack': updateAttack(s, u, d, o); break;
       case 'gather': updateGather(s, u, d, o); break;
       case 'build': updateBuild(s, u, d, o); break;
+      case 'repair': updateRepair(s, u, d, o); break;
     }
   }
 
