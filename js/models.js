@@ -1361,7 +1361,77 @@
   // Tunik memakai salinan bahan per pemain yang dikalikan warna tim. Alat kerja dan bawaan adalah mesh kaku yang
   // menempel pada tulang; geometrinya ditulis dalam ruang model (pose istirahat) dan dibawa ke ruang tulang oleh matriks
   // ikat-balik tulang itu.
-  const WALK_RATE = 2;                                    // pengali kecepatan klip jalan (4 langkah per detik: berjalan bergegas)
+  // Laju tanah sebuah klip langkah di tempat (tile/detik pada kecepatan putar 1): kecepatan mundur ujung telapak kaki
+  // (tulang ToeBase) selama menapak. Kaki dianggap menapak saat tingginya dalam 0,012 dari titik terendah sepanjang
+  // klip; pada klip lari ada fase melayang (tak ada kaki yang menapak) yang tidak dihitung. Unit yang bergerak secepat
+  // ini tampak tidak meluncur.
+  function gaitSpeed(m, clip) {
+    const { akar, skeleton } = BF.assets.kerangkaBaru(m), root = new THREE.Object3D(), v = new THREE.Vector3(), N = 120, pos = [];
+    for (const b of akar) root.add(b);
+    const mixer = new THREE.AnimationMixer(root), feet = ['Left', 'Right'].map(sd => skeleton.bones.find(b => b.name === sd + 'ToeBase') || skeleton.bones.find(b => b.name === sd + 'Foot'));
+    mixer.clipAction(clip).play();
+    for (let i = 0; i <= N; i++) {
+      mixer.setTime(clip.duration * Math.min(i / N, 0.9999));
+      root.updateMatrixWorld(true);
+      pos.push(feet.map(f => { v.setFromMatrixPosition(f.matrixWorld); return [v.y, v.z]; }));
+    }
+    mixer.stopAllAction();
+    mixer.uncacheRoot(root);
+    skeleton.dispose();
+    let low = Infinity, dz = 0, n = 0;
+    for (const q of pos) low = Math.min(low, q[0][0], q[1][0]);
+    for (let i = 1; i <= N; i++) {
+      const y = k => (pos[i][k][0] + pos[i - 1][k][0]) / 2, k = y(0) <= y(1) ? 0 : 1;
+      if (y(k) > low + 0.012) continue;
+      dz += pos[i - 1][k][1] - pos[i][k][1];
+      n++;
+    }
+    return n ? Math.max(0.05, dz / (n * clip.duration / N)) : 0.5;
+  }
+
+  // Klip lari turunan dari klip jalan, dipakai selama aset belum menyediakan klip `lari`: unit bergerak ±2,4 tile/detik
+  // sedangkan laju tanah klip jalan hanya ±0,5 tile/detik, jadi kaki tampak meluncur. Di sini ayunan paha dan lengan
+  // diperbesar di sekitar pose rata-ratanya, tekukan lutut diperbesar dari pose istirahat (lutut tidak pernah menekuk
+  // ke belakang), dan badan dicondongkan ke depan. Karena pinggul tidak ikut turun, kaki hanya menapak di sekitar
+  // posisi tegak dan melayang di ujung-ujung ayunan — seperti orang berlari.
+  function runClip(m, base, name) {
+    const T = m.kerangka.tulang, q = new THREE.Quaternion(), ref = new THREE.Quaternion(), d = new THREE.Quaternion();
+    const lean = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.2);
+    const gain = bone => (/UpLeg$/.test(bone) ? [2.3, 0] : /Leg$/.test(bone) ? [1.5, 1] : /^(Left|Right)Arm$/.test(bone) ? [1.6, 0] : null);      // [pengali, 1 = dari pose istirahat]
+    return new THREE.AnimationClip(name, base.duration, base.tracks.map(tr => {
+      const c = tr.clone(), v = c.values, [bone, prop] = c.name.split('.'), g = prop === 'quaternion' ? gain(bone) : null;
+      if (g) {
+        if (g[1]) ref.fromArray(T.find(t => t.nama === bone).r);
+        else {                                            // rata-rata kuaternion sepanjang klip
+          const a = [0, 0, 0, 0];
+          for (let i = 0; i < v.length; i += 4) { const sg = v[i] * v[0] + v[i + 1] * v[1] + v[i + 2] * v[2] + v[i + 3] * v[3] < 0 ? -1 : 1; for (let j = 0; j < 4; j++) a[j] += v[i + j] * sg; }
+          ref.fromArray(a).normalize();
+        }
+        for (let i = 0; i < v.length; i += 4) {
+          d.copy(ref).invert().multiply(q.fromArray(v, i));
+          if (d.w < 0) d.set(-d.x, -d.y, -d.z, -d.w);
+          const h = Math.acos(Math.min(1, d.w)), sn = Math.sin(h);
+          if (sn > 1e-5) { const h2 = h * g[0], k = Math.sin(h2) / sn; d.set(d.x * k, d.y * k, d.z * k, Math.cos(h2)); }
+          q.copy(ref).multiply(d).toArray(v, i);
+        }
+      }
+      if (bone === 'Spine' && prop === 'quaternion') for (let i = 0; i < v.length; i += 4) q.fromArray(v, i).premultiply(lean).toArray(v, i);
+      return c;
+    }));
+  }
+
+  models.gaitSpeed = gaitSpeed;
+
+  // Klip lari sambil membawa: kaki dan badan dari klip lari, lengan kiri (yang menahan beban) dari klip jalan membawa.
+  function carryClip(run, carry, name) {
+    const arm = /^Left(Shoulder|Arm|ForeArm|Hand)\./, k = run.duration / carry.duration;
+    return new THREE.AnimationClip(name, run.duration, run.tracks.filter(t => !arm.test(t.name)).map(t => t.clone()).concat(carry.tracks.filter(t => arm.test(t.name)).map(t => {
+      const c = t.clone();
+      for (let i = 0; i < c.times.length; i++) c.times[i] *= k;
+      return c;
+    })));
+  }
+
   let WK = null;
   function workerKit() {
     if (WK) return WK;
@@ -1385,7 +1455,12 @@
       b.tube('flat', [sh.x * 0.5, sh.y - 0.01, sh.z - 0.08], [sh.x * 0.95, sh.y + 0.04, sh.z + 0.03], 0.032, 0.02, 6, mul(sack, 0.8));   // leher karung melewati bahu kiri
       b.ball('flat', sh.x * 0.35, sh.y - 0.1, sh.z - 0.152, 0.034, col, 1, 1.4, 1.4, 0.4);                               // tanda warna sumber daya
     });
-    return (WK = { m, K, hand, back, tool, packs, tunik: {} });
+    // klip bergerak: `lari` / `lari_bawa` dari aset bila ada, kalau tidak diturunkan dari klip jalan; laju tanahnya
+    // diukur supaya kecepatan putar klip bisa disamakan dengan kecepatan gerak unit (kaki tidak meluncur)
+    const lari = m.klip.lari || runClip(m, m.klip.jalan, 'lari');
+    const bawa = m.klip.lari_bawa || (m.klip.lari ? carryClip(lari, m.klip.jalan_bawa, 'lari_bawa') : runClip(m, m.klip.jalan_bawa, 'lari_bawa'));
+    const gerak = { lari: { clip: lari, laju: gaitSpeed(m, lari) }, lari_bawa: { clip: bawa, laju: gaitSpeed(m, bawa) } };
+    return (WK = { m, K, hand, back, tool, packs, gerak, tunik: {} });
   }
 
   function workerUnit(owner) {
@@ -1402,6 +1477,7 @@
     ud.mixer = new THREE.AnimationMixer(mesh);
     ud.act = {};
     for (const n in m.klip) ud.act[n] = ud.mixer.clipAction(m.klip[n]);
+    for (const n in k.gerak) ud.act[n] = ud.mixer.clipAction(k.gerak[n].clip);
     for (const n of ['lempar', 'mati']) { ud.act[n].setLoop(THREE.LoopOnce, 1); ud.act[n].clampWhenFinished = true; }
     ud.cur = null; ud.once = null; ud.lastT = null; ud.atk0 = 0;
     const attach = (geo, bone) => {
@@ -1428,7 +1504,7 @@
     // dimulai dari detik pelepasan (0,4) — yang terlihat adalah ayunan lanjutannya.
     if (!st.dead && a > ud.atk0 + 0.05 && !st.working) ud.once = 'lempar';
     ud.atk0 = a;
-    let want = st.dead ? 'mati' : st.working ? 'kerja' : st.moving ? (st.carry > 0 ? 'jalan_bawa' : 'jalan') : 'diam';
+    let want = st.dead ? 'mati' : st.working ? 'kerja' : st.moving ? (st.carry > 0 ? 'lari_bawa' : 'lari') : 'diam';
     if (ud.once) {
       if (want !== 'diam' || (ud.cur === ud.once && !A[ud.once].isRunning())) ud.once = null;      // selesai, atau unit disuruh hal lain
       else want = ud.once;
@@ -1441,7 +1517,8 @@
       if (prev) prev.crossFadeTo(next, 0.15, false);
       ud.cur = want;
     }
-    A.jalan.timeScale = A.jalan_bawa.timeScale = WALK_RATE;
+    // kecepatan putar klip lari = kecepatan unit ÷ laju tanah klip (dibatasi agar tidak terlalu lambat/tergesa)
+    for (const n in WK.gerak) A[n].timeScale = BF.clamp((st.speed || 2.4) / WK.gerak[n].laju, 0.6, 2.6);
     ud.mixer.update(dt);
     ud.extras.tool.visible = !!st.working;
     for (const res of BF.RES) ud.extras['pack_' + res].visible = !st.dead && !st.working && st.carry > 0 && st.carryType === res;

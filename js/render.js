@@ -546,7 +546,7 @@
       o.yaw += dy * Math.min(1, dt * 12);
       o.group.rotation.y = o.yaw;
       o.group.position.y = BF.relief.at(x, y);
-      models.pose(o.group, { t, id: u.id, moving: u.moving, working: u.working, atk: Math.max(0, u.atkAnim) / 0.3, carry: u.carry, carryType: u.carryType });
+      models.pose(o.group, { t, id: u.id, moving: u.moving, working: u.working, atk: Math.max(0, u.atkAnim) / 0.3, carry: u.carry, carryType: u.carryType, speed: BF.unitDef(s, u).speed });
       if (sel.has(u.id)) {
         const r = take('ring' + (u.owner === me ? 0 : 1), () => new THREE.Mesh(gfx.ringGeo, M.ring[u.owner === me ? 0 : 1])), rad = U[u.type].radius + 0.2;
         r.position.set(x, o.group.position.y + 0.07, y);

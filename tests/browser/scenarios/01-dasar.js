@@ -59,11 +59,14 @@ module.exports = async ({ page, check }) => {
   // pekerja beranimasi (model berkerangka dari aset): klip mengikuti keadaan unit — berjalan, bekerja, berjalan membawa hasil
   const seen = new Set();
   let rig = null;
-  for (let i = 0; i < 120 && !(seen.has('jalan') && seen.has('kerja') && seen.has('jalan_bawa')); i++) {
+  for (let i = 0; i < 120 && !(seen.has('lari') && seen.has('kerja') && seen.has('lari_bawa')); i++) {
     const r = await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.type === 'worker').map(u => { const g = BF.gfx.unitGroup(u.id), ud = g && g.userData; return ud && ud.mixer ? { cur: ud.cur, alat: ud.extras.tool.visible, bawa: ['food', 'wood', 'gold', 'stone'].some(k => ud.extras['pack_' + k].visible), kerja: u.working, carry: u.carry, tulang: ud.skeleton.bones.length } : null; })`);
-    for (const q of r) if (q) { seen.add(q.cur); rig = rig || q; if (q.cur === 'kerja' && !q.alat) seen.add('kerja-tanpa-alat'); if (q.cur === 'jalan_bawa' && !q.bawa) seen.add('bawa-tanpa-beban'); }
+    for (const q of r) if (q) { seen.add(q.cur); rig = rig || q; if (q.cur === 'kerja' && !q.alat) seen.add('kerja-tanpa-alat'); if (q.cur === 'lari_bawa' && !q.bawa) seen.add('bawa-tanpa-beban'); }
     await p.sleep(250);
   }
   check('pekerja memakai model berkerangka 21 tulang', !!rig && rig.tulang === 21, rig);
-  check('klip pekerja mengikuti keadaan: jalan, kerja (alat di tangan), jalan membawa (beban tampak)', seen.has('jalan') && seen.has('kerja') && seen.has('jalan_bawa') && !seen.has('kerja-tanpa-alat') && !seen.has('bawa-tanpa-beban'), [...seen]);
+  check('klip pekerja mengikuti keadaan: lari, kerja (alat di tangan), lari membawa (beban tampak)', seen.has('lari') && seen.has('kerja') && seen.has('lari_bawa') && !seen.has('kerja-tanpa-alat') && !seen.has('bawa-tanpa-beban'), [...seen]);
+  // kaki tidak meluncur: kecepatan putar klip lari × laju tanah klip = kecepatan gerak unit
+  const gait = await p.ev(`(() => { const s = BF.game.s, u = s.units.find(q => q.owner === 0 && q.type === 'worker'), ud = BF.gfx.unitGroup(u.id).userData, a = ud.act.lari; return { laju: BF.models.gaitSpeed(BF.assets.model.pekerja, a.getClip()), skala: a.timeScale, unit: BF.unitDef(s, u).speed }; })()`);
+  check('laju langkah lari cocok dengan kecepatan unit (selisih < 3%)', Math.abs(gait.laju * gait.skala - gait.unit) < gait.unit * 0.03 && gait.skala > 0.8 && gait.skala < 2.6, gait);
 };
