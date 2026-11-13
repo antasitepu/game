@@ -125,17 +125,17 @@ function buka(file) {
     return out;
   }
 
-  // Gambar: { file } (di disk) atau { data, ext } (tertanam di GLB).
+  // Gambar: { file } (di disk) atau { data, ext } (tertanam di GLB); kunci sama = gambar yang sama (dipakai beberapa bahan).
   function gambar(texInfo) {
     if (!texInfo || json.textures === undefined) return null;
     const t = json.textures[texInfo.index];
     if (!t || t.source === undefined) return null;
-    const im = json.images[t.source];
-    if (im.uri && !im.uri.startsWith('data:')) return { file: didalam(dir, im.uri) };
+    const im = json.images[t.source], kunci = 'g' + t.source;
+    if (im.uri && !im.uri.startsWith('data:')) return { file: didalam(dir, im.uri), kunci };
     const ext = /png/.test(im.mimeType || im.uri || '') ? 'png' : 'jpg';
-    if (im.uri) return { data: Buffer.from(im.uri.slice(im.uri.indexOf(',') + 1), 'base64'), ext };
+    if (im.uri) return { data: Buffer.from(im.uri.slice(im.uri.indexOf(',') + 1), 'base64'), ext, kunci };
     const bv = json.bufferViews[im.bufferView], buf = buffers[bv.buffer];
-    return { data: buf.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength), ext };
+    return { data: buf.subarray(bv.byteOffset || 0, (bv.byteOffset || 0) + bv.byteLength), ext, kunci };
   }
 
   const bahan = (json.materials || []).map(m => {

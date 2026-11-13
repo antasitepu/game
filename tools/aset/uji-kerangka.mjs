@@ -1,7 +1,8 @@
 // Uji ujung-ke-ujung alur aset berkerangka. Blender membuat model uji + rujukan posisi vertex (tools/aset/blender/contoh.py),
 // lalu dua jalur diuji sampai ke js/assets.js di Node dengan three.js asli, dan hasil skinning dibandingkan dengan Blender:
 //   langsung: GLB berkerangka → olah.mjs → assets.js
-//   mixamo:   tiruan unduhan Mixamo (FBX) → blender/gabung.py → olah.mjs → assets.js (jari dilebur, gerak akar dibuang)
+//   mixamo:   tiruan unduhan Mixamo (FBX) → blender/gabung.py → olah.mjs → assets.js (jari dilebur, gerak akar dibuang,
+//             tempelan kaku di tulang kepala disejajarkan dengan model yang digeser)
 // Ditambah blender/rapikan.py pada tiruan model AI mentah. Semua aset game lain ikut dimuat dari salinan folder assets/
 // untuk memastikan pemuatnya tetap kompatibel.
 //
@@ -79,10 +80,13 @@ async function ujiJalur(label, glb, tanpaGerakAkar) {
   cek('semua model di manifest termuat (kompatibel dengan aset lama)', Object.keys(man.model).every(n => BF.assets.model[n] && BF.assets.model[n].lod.length), Object.keys(man.model).length + ' model');
   const model = BF.assets.model.pekerja, tulang = model.kerangka.tulang;
   cek('nama tulang tanpa awalan "mixamorig:"', tulang.every(t => !/[:.]/.test(t.nama)) && tulang.some(t => t.nama === 'Hips'));
+  const bhn = man.model.pekerja.bahan;
+  cek('dua bahan berbagi satu tekstur, bahan "kain_tim" bertanda warna tim', bhn.length === 2 && bhn[0].peta === bhn[1].peta && !bhn[0].tim && bhn[1].tim === true
+    && model.bahan[0].map === model.bahan[1].map && !model.bahan[0].userData.tim && model.bahan[1].userData.tim === true, JSON.stringify(bhn));
   cek('klip diam, jalan, serang ada', ['diam', 'jalan', 'serang'].every(n => model.klip[n]), Object.keys(model.klip).join(', '));
 
   const geo = model.lod[0], { akar, skeleton } = BF.assets.kerangkaBaru(model);
-  const mesh = new THREE.SkinnedMesh(geo, model.bahan[0]);
+  const mesh = new THREE.SkinnedMesh(geo, model.bahan);
   akar.forEach(b => mesh.add(b));
   mesh.bind(skeleton);
   const nv = geo.attributes.position.count, v3 = new THREE.Vector3();
@@ -130,9 +134,10 @@ async function ujiJalur(label, glb, tanpaGerakAkar) {
 const langsung = await ujiJalur('langsung', path.join(CONTOH, 'pekerja.glb'), false);
 cek('tulang jari ada di jalur langsung', langsung.kerangka.tulang.some(t => /HandIndex1/.test(t.nama)));
 
-const gab = ringkasan(blender('gabung.py', [path.join(CONTOH, 'mixamo'), path.join(KERJA, 'gabung', 'pekerja.glb')]), 'GABUNG');
+const gab = ringkasan(blender('gabung.py', [path.join(CONTOH, 'mixamo'), path.join(KERJA, 'gabung', 'pekerja.glb'), '--tempel', path.join(CONTOH, 'tempel.glb') + ':Head']), 'GABUNG');
 const mix = await ujiJalur('mixamo', gab.glb, true);
 cek('gabung.py: jari dilebur ke tangan', gab.jari_dilebur === 4 && !mix.kerangka.tulang.some(t => /Hand(Thumb|Index)/.test(t.nama)), mix.kerangka.tulang.length + ' tulang');
+cek('gabung.py: tempelan kaku ikut (12 segitiga), disejajarkan, dan mengikuti tulang kepala seperti di Blender', gab.tempel.length === 1 && gab.tempel[0].disejajarkan && mix.lod[0].index.count / 3 === langsung.lod[0].index.count / 3 + 12, JSON.stringify(gab.tempel[0]));
 cek('gabung.py: gerak akar klip jalan terdeteksi', Math.abs(gab.klip.jalan.geser_akar_m - 0.2) < 0.005, gab.klip.jalan.geser_akar_m + ' m');
 
 console.log('\n## rapikan (model AI mentah → FBX untuk Mixamo)');

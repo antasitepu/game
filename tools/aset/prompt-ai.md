@@ -51,18 +51,25 @@ berwarna netral.
 Unit butuh animasi (diam, jalan, bekerja, menyerang, mati). Alurnya (contoh untuk `pekerja`; perintah dijalankan dari
 folder proyek, butuh Blender):
 
-1. **Model** — buat dengan prompt di bawah (pose A, tangan kosong: senjata/alat dibuat terpisah dan ditempel ke tulang
-   tangan di game). Unduh GLB bertekstur ke `tools/aset/buatan/pekerja-ai.glb` (folder ini ikut masuk git).
-2. **Rapikan** — gabung mesh, sederhanakan, tegakkan, ekspor FBX untuk Mixamo + pratinjau depan/samping:
+1. **Model** — dua pilihan:
+   - **Gratis, lewat skrip Blender** (yang dipakai sekarang): model pekerja dibangun dan diberi tekstur oleh skrip, tanpa akun:
+     `blender -b --factory-startup --python tools/aset/blender/pekerja.py -- tools/aset/sumber/pekerja`
+     Hasilnya `pekerja-mixamo.fbx` (untuk Mixamo), `pekerja-tempel.glb` (caping), dan pratinjau PNG. Lanjut ke langkah 3.
+   - **Generator AI** (berbayar di Meshy/Tripo): buat dengan prompt di bawah (pose A, tangan kosong: senjata/alat dibuat
+     terpisah dan ditempel ke tulang tangan di game). Unduh GLB bertekstur ke `tools/aset/buatan/pekerja-ai.glb`.
+2. **Rapikan** (hanya untuk model AI) — gabung mesh, sederhanakan, tegakkan, ekspor FBX untuk Mixamo + pratinjau depan/samping:
    `blender -b --factory-startup --python tools/aset/blender/rapikan.py -- tools/aset/buatan/pekerja-ai.glb tools/aset/sumber/pekerja/pekerja-mixamo.fbx`
    Bila pratinjau "depan" memperlihatkan punggung/samping, ulangi dengan `--putar 180` (atau 90/−90).
-3. **Mixamo** (mixamo.com, akun Adobe) — unggah `pekerja-mixamo.fbx`, tandai titik dagu/pergelangan/siku/lutut/selangkangan.
+3. **Mixamo** (mixamo.com, gratis dengan akun Adobe) — unggah `pekerja-mixamo.fbx`, tandai titik
+   dagu/pergelangan/siku/lutut/selangkangan. Untuk model skrip pilih kerangka **No Fingers** (tangannya tanpa jari).
    Unduh FBX: satu kali **With Skin** (pose T) disimpan sebagai `tools/aset/sumber/pekerja/mixamo/model.fbx`, lalu tiap
    animasi **Without Skin**, 30 fps, centang **In Place** bila ada, disimpan dengan nama klipnya: `diam.fbx`, `jalan.fbx`,
    `kerja.fbx`, `serang.fbx`, `mati.fbx` (nama file = nama klip di game).
-4. **Gabung** — semua klip ke satu GLB (jari dilebur ke tangan, gerak maju akar dibuang):
-   `blender -b --factory-startup --python tools/aset/blender/gabung.py -- tools/aset/sumber/pekerja/mixamo tools/aset/sumber/pekerja.glb`
+4. **Gabung** — semua klip ke satu GLB (jari dilebur ke tangan, gerak maju akar dibuang); untuk model skrip, caping
+   ditempel ke tulang kepala lewat `--tempel` (tidak ikut diunggah supaya tidak ikut melentur dengan bahu):
+   `blender -b --factory-startup --python tools/aset/blender/gabung.py -- tools/aset/sumber/pekerja/mixamo tools/aset/sumber/pekerja.glb --tempel tools/aset/sumber/pekerja/pekerja-tempel.glb:Head`
 5. **Olah** — `node tools/aset/olah.mjs pekerja` (resep `pekerja` di olah.mjs) → `assets/m/pekerja.bin` + manifest.
+   Bahan bernama `…_tim` (tunik) ditandai `tim: true`; game mengalikannya dengan warna tim.
 
 Alat ini diuji ujung-ke-ujung dengan `node tools/aset/uji-kerangka.mjs` (model uji buatan Blender, tanpa akun apa pun).
 

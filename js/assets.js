@@ -86,7 +86,12 @@
       g.computeBoundingSphere();
       return g;
     });
-    const bahan = def.bahan.map(b => bersama[b.jenis] || new THREE.MeshStandardMaterial({ map: tx[b.peta], normalMap: b.normal ? tx[b.normal] : null, roughness: b.kasar, metalness: 0 }));
+    const bahan = def.bahan.map(b => {
+      if (bersama[b.jenis]) return bersama[b.jenis];
+      const m = new THREE.MeshStandardMaterial({ map: tx[b.peta], normalMap: b.normal ? tx[b.normal] : null, roughness: b.kasar, metalness: 0 });
+      if (b.tim) m.userData.tim = true;                // bahan yang dikalikan warna tim oleh pemakainya (mis. tunik pekerja)
+      return m;
+    });
     return Object.assign({ lod, bahan, tinggi: def.tinggi, radius: def.radius }, def.kerangka ? bangunKerangka(def, buf) : null);
   }
 

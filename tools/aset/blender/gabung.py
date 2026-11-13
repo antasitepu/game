@@ -6,15 +6,20 @@
 # ("mixamorig:", "mixamorig1:", …). Tulang jari dilebur ke tangan (tak terlihat dari jarak kamera game, menghemat hitungan
 # animasi per unit) kecuali --simpan-jari, dan gerak maju akar (root motion) dibuang supaya klip berjalan di tempat:
 # posisi unit diatur simulasi.
+# --tempel <file.glb>:<Tulang> (boleh berulang): mesh kaku yang tidak ikut diunggah ke Mixamo (mis. caping) ditempel 100% ke
+# satu tulang dan disatukan dengan mesh model. Bila GLB itu membawa properti "kotak_tubuh" (kotak pembatas tubuh di
+# koordinat asalnya, lihat pekerja.py), posisinya disejajarkan dengan model keluaran Mixamo yang mungkin digeser/diskalakan.
 #
-#   blender --background --factory-startup --python tools/aset/blender/gabung.py -- <folder-mixamo> <keluar.glb> [--simpan-jari]
+#   blender --background --factory-startup --python tools/aset/blender/gabung.py -- <folder-mixamo> <keluar.glb>
+#           [--simpan-jari] [--tempel <file.glb>:<Tulang>]
 # Baris terakhir keluaran: GABUNG {json ringkasan}.
 import bpy, json, os, re, sys
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 ARG = sys.argv[sys.argv.index('--') + 1:]
 FOLDER, KELUAR = os.path.abspath(ARG[0]), os.path.abspath(ARG[1])
 SIMPAN_JARI = '--simpan-jari' in ARG[2:]
+TEMPEL = [ARG[i + 1] for i, a in enumerate(ARG) if a == '--tempel']
 JARI = re.compile(r'Hand(Thumb|Index|Middle|Ring|Pinky)\d', re.I)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -73,6 +78,47 @@ if not arm:
 model = [o for o in bpy.data.objects if o.type == 'MESH' and o.parent == arm]
 inti = lambda n: n.split(':')[-1]
 BONE = re.compile(r'pose\.bones\["([^"]+)"\]')
+
+# Tempelan kaku: verteksnya dipindah ke ruang mesh model (pose ikat), diikat penuh ke satu tulang, lalu digabung ke mesh model.
+tempelan = []
+if TEMPEL:
+    badan = model[0]
+    titik = [o.matrix_world @ v.co for o in model for v in o.data.vertices]
+    kb = [f(p[i] for p in titik) for f in (min, max) for i in range(3)]
+    for spek in TEMPEL:
+        f, _, nama_tulang = spek.rpartition(':')
+        tulang = next((b.name for b in arm.data.bones if inti(b.name).lower() == nama_tulang.lower()), None)
+        if not f or not tulang:
+            raise SystemExit('--tempel ' + spek + ': tulis <file.glb>:<Tulang>; tulang "' + nama_tulang + '" tidak ada di kerangka model')
+        obj0 = set(bpy.data.objects)
+        bpy.ops.import_scene.gltf(filepath=os.path.abspath(f))
+        baru = [o for o in bpy.data.objects if o not in obj0]
+        ka = next((list(o['kotak_tubuh']) for o in baru if 'kotak_tubuh' in o.keys()), None)
+        M, skala = Matrix.Identity(4), 1.0
+        if ka:                                                  # koordinat asal → koordinat model sekarang: skala dari tinggi, geser dari tengah alas
+            skala = (kb[5] - kb[2]) / (ka[5] - ka[2])
+            M = Matrix.Translation(((kb[0] + kb[3]) / 2, (kb[1] + kb[4]) / 2, kb[2])) @ Matrix.Scale(skala, 4) @ Matrix.Translation((-(ka[0] + ka[3]) / 2, -(ka[1] + ka[4]) / 2, -ka[2]))
+        jumlah, sisa = 0, [o for o in baru if o.type != 'MESH']
+        for o in [o for o in baru if o.type == 'MESH']:
+            dunia = M @ o.matrix_world
+            o.parent = None
+            o.data.transform(badan.matrix_world.inverted() @ dunia)
+            o.matrix_world = badan.matrix_world
+            o.vertex_groups.new(name=tulang).add(list(range(len(o.data.vertices))), 1.0, 'REPLACE')
+            if o.data.uv_layers and badan.data.uv_layers:
+                o.data.uv_layers[0].name = badan.data.uv_layers.active.name
+            for slot in o.material_slots:                       # bahan senama dengan bahan model (mis. "tubuh") dipakai bersama
+                sama = next((m for m in badan.data.materials if m and slot.material and inti(m.name).split('.')[0] == slot.material.name.split('.')[0]), None)
+                if sama:
+                    slot.material = sama
+            jumlah += len(o.data.vertices)
+            for x in sc.objects:
+                x.select_set(x in (o, badan))
+            bpy.context.view_layer.objects.active = badan
+            bpy.ops.object.join()
+        for o in sisa:
+            bpy.data.objects.remove(o, do_unlink=True)
+        tempelan.append({'file': os.path.basename(f), 'tulang': tulang, 'verteks': jumlah, 'skala': round(skala, 4), 'disejajarkan': bool(ka)})
 
 # Jari dilebur ke tulang tangan: bobotnya ditambahkan ke tangan, lalu tulang & jalur animasinya dibuang.
 jari = [] if SIMPAN_JARI else [b.name for b in arm.data.bones if JARI.search(b.name)]
@@ -168,4 +214,4 @@ for o in sc.objects:
 bpy.context.view_layer.objects.active = arm
 os.makedirs(os.path.dirname(KELUAR), exist_ok=True)
 bpy.ops.export_scene.gltf(filepath=KELUAR, export_format='GLB', use_selection=True, export_animation_mode='ACTIONS', export_skins=True, export_yup=True)
-print('GABUNG ' + json.dumps({'glb': KELUAR, 'tulang': len(arm.data.bones), 'jari_dilebur': len(jari), 'mesh': [o.name for o in model], 'klip': ringkas, 'catatan': catatan}))
+print('GABUNG ' + json.dumps({'glb': KELUAR, 'tulang': len(arm.data.bones), 'jari_dilebur': len(jari), 'mesh': [o.name for o in model], 'klip': ringkas, 'tempel': tempelan, 'catatan': catatan}))

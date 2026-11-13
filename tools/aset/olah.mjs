@@ -309,7 +309,8 @@ async function buatBenteng(nama, r) {
 }
 
 // Unit/hewan berkerangka: mesh ber-skin + klip animasi dari GLB lokal. Pose istirahat dinormalkan (kaki di y = 0, tinggi r.tinggi);
-// satu grup per bahan, LOD dikurangi proporsional per grup.
+// satu grup per bahan, LOD dikurangi proporsional per grup. Bahan yang memakai gambar yang sama berbagi satu tekstur, dan
+// bahan bernama "…_tim" ditandai tim: true — game mengalikannya dengan warna tim (mis. tunik putih gading pekerja).
 async function buatKerangka(nama, r) {
   const file = path.join(SUMBER, r.sumber + '.glb');
   if (!fs.existsSync(file)) throw new Error(nama + ': model belum ada — taruh GLB berkerangka di ' + path.relative(process.cwd(), file));
@@ -319,9 +320,11 @@ async function buatKerangka(nama, r) {
   const daftarBahan = [...new Set(k.bagian.map(b => b.bahan))];
   const mesh = daftarBahan.map(b => satukan(k.bagian.filter(x => x.bahan === b))), total = mesh.reduce((s, m) => s + G.jumlahTri(m), 0);
   const lods = r.lod.map(t => mesh.map((m, i) => ({ mesh: G.sederhanakan(m, t * G.jumlahTri(m) / total), bahan: i })));
-  const bahan = daftarBahan.map((b, i) => {
+  const tertulis = new Map();
+  const bahan = daftarBahan.map(b => {
     if (!b.gbrWarna) throw new Error(nama + ': bahan "' + b.nama + '" tanpa tekstur warna belum didukung');
-    return { jenis: 'tekstur', peta: tulisTekstur(nama + (i ? '_' + i : ''), b.gbrWarna, r.tekstur, 85), kasar: r.kasar || 0.85 };
+    if (!tertulis.has(b.gbrWarna.kunci)) tertulis.set(b.gbrWarna.kunci, tulisTekstur(nama + (tertulis.size ? '_' + tertulis.size : ''), b.gbrWarna, r.tekstur, 85));
+    return { jenis: 'tekstur', peta: tertulis.get(b.gbrWarna.kunci), kasar: r.kasar || 0.85, ...(/(^|_)tim(\.|_|$)/i.test(b.nama) ? { tim: true } : {}) };
   });
   const klip = k.klip.filter(c => c.jalur.length).map(c => c.nama + ' ' + c.durasi.toFixed(2) + 's');
   tulisModel(nama, lods, bahan, k.tulang.length + ' tulang; klip: ' + (klip.join(', ') || '-'), k);

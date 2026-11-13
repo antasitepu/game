@@ -3,7 +3,9 @@
 # tiga klip animasi (klip jalan maju 20 cm: gerak akar), diekspor ke GLB. Juga menulis rujukan posisi vertex hasil
 # evaluasi Blender (rujukan.json) dan gambar pratinjau, dipakai tools/aset/uji-kerangka.mjs untuk memastikan hasil
 # olah.mjs + js/assets.js bergerak persis seperti di Blender.
-#   --mixamo: juga tiruan unduhan Mixamo di <keluaran>/mixamo/ (pekerja.fbx bermesh, <klip>.fbx tanpa mesh)
+# Sebuah kubus kecil di dalam kepala menempel kaku ke tulang kepala (tiruan caping): ikut di rujukan, tidak di pekerja.glb.
+#   --mixamo: juga tiruan unduhan Mixamo di <keluaran>/mixamo/ (pekerja.fbx bermesh & digeser 3 cm, <klip>.fbx tanpa mesh)
+#             dan tempel.glb (kubus tadi di koordinat asal + properti kotak_tubuh) untuk gabung.py --tempel
 #   --ai:     juga tiruan model mentah generator AI (tanpa kerangka, lebih rapat, posisi & skala sembarang): pekerja-ai.glb
 #
 #   blender --background --factory-startup --python tools/aset/blender/contoh.py -- <folder-keluaran> [--mixamo] [--ai]
@@ -118,6 +120,19 @@ for v in me.vertices:
         grup[n].add([v.index], x / jml, 'REPLACE')
 ob.modifiers.new('Armature', 'ARMATURE').object = arm
 
+# tempelan uji: kubus 6 cm di dalam kepala (koordinat dunia), menempel ke tulang kepala
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=0.06, matrix=Matrix.Translation((0, 0, 1.68)), calc_uvs=True)
+me_t = bpy.data.meshes.new('Tempel')
+bm.to_mesh(me_t)
+bm.free()
+tmp = bpy.data.objects.new('Tempel', me_t)
+sc.collection.objects.link(tmp)
+tmp.parent, tmp.parent_type, tmp.parent_bone = arm, 'BONE', PRE + 'Head'
+bpy.context.view_layer.update()
+kp = arm.pose.bones[PRE + 'Head']
+tmp.matrix_parent_inverse = (arm.matrix_world @ kp.matrix @ Matrix.Translation((0, kp.length, 0))).inverted()
+
 # bahan bertekstur (kisi warna) supaya jalur tekstur ikut teruji
 gbr = bpy.data.images.new('kisi', 128, 128)
 gbr.generated_type = 'COLOR_GRID'
@@ -133,6 +148,13 @@ tex = nt.nodes.new('ShaderNodeTexImage')
 tex.image = bpy.data.images.load(os.path.join(KELUAR, 'kisi.png'))
 nt.links.new(tex.outputs['Color'], bsdf.inputs['Base Color'])
 me.materials.append(mat)
+me_t.materials.append(mat)
+mat_tim = mat.copy()                                # bahan kedua memakai gambar yang sama: separuh kiri tubuh "berwarna tim"
+mat_tim.name = 'kain_tim'
+me.materials.append(mat_tim)
+for p in me.polygons:
+    if p.center.x > 0:
+        p.material_index = 1
 
 # ---------------------------------------------------------------- animasi (rotasi di ruang lokal tulang)
 pb = arm.pose.bones
@@ -204,6 +226,10 @@ def posisi():
         p = M @ v.co
         hasil += [round(p.x, 6), round(p.z, 6), round(-p.y, 6)]
     ev.to_mesh_clear()
+    Mt = tmp.evaluated_get(dg).matrix_world
+    for v in tmp.data.vertices:
+        p = Mt @ v.co
+        hasil += [round(p.x, 6), round(p.z, 6), round(-p.y, 6)]
     return hasil
 
 
@@ -247,11 +273,21 @@ def pilih(*obj):
 
 
 istirahat()
-bpy.ops.export_scene.gltf(filepath=os.path.join(KELUAR, 'pekerja.glb'), export_format='GLB', export_animation_mode='ACTIONS', export_skins=True, export_yup=True)
+pilih(arm, ob)
+bpy.ops.export_scene.gltf(filepath=os.path.join(KELUAR, 'pekerja.glb'), export_format='GLB', use_selection=True, export_animation_mode='ACTIONS', export_skins=True, export_yup=True)
 
 if '--mixamo' in OPSI:
     MIX = os.path.join(KELUAR, 'mixamo')
     os.makedirs(MIX, exist_ok=True)
+    istirahat()
+    lepas = bpy.data.objects.new('Tempel', me_t)               # kubus tempelan tanpa induk, di koordinat asal
+    sc.collection.objects.link(lepas)
+    ko = [ob.matrix_world @ v.co for v in me.vertices]
+    lepas['kotak_tubuh'] = [f(p[i] for p in ko) for f in (min, max) for i in range(3)]
+    pilih(lepas)
+    bpy.ops.export_scene.gltf(filepath=os.path.join(KELUAR, 'tempel.glb'), export_format='GLB', use_selection=True, export_yup=True, export_extras=True)
+    bpy.data.objects.remove(lepas, do_unlink=True)
+    arm.location = (0.03, -0.02, 0)                             # Mixamo boleh menggeser model: gabung.py harus menyejajarkan tempelan
     for nama, n, _ in KLIP:
         arm.animation_data.action = aksi[nama]
         sc.frame_start, sc.frame_end = 0, n
@@ -263,6 +299,7 @@ if '--mixamo' in OPSI:
     pilih(arm, ob)
     bpy.ops.export_scene.fbx(filepath=os.path.join(MIX, 'pekerja.fbx'), use_selection=True, object_types={'ARMATURE', 'MESH'}, add_leaf_bones=True,
                              bake_anim=False, path_mode='COPY', embed_textures=True)
+    arm.location = (0, 0, 0)
 
 if '--ai' in OPSI:
     ai = bpy.data.objects.new('ModelAI', me.copy())
