@@ -1,13 +1,17 @@
 # Model uji berkerangka untuk alat aset (bukan aset game): sosok manusia sederhana dengan kerangka bergaya Mixamo
-# (objek kerangka diputar 90° dan berskala 0,01, tulang dalam cm, nama "mixamorig:…"), tiga klip animasi, diekspor ke GLB.
-# Juga menulis rujukan posisi vertex hasil evaluasi Blender (rujukan.json) dan gambar pratinjau, dipakai
-# tools/aset/uji-kerangka.mjs untuk memastikan hasil olah.mjs + js/assets.js bergerak persis seperti di Blender.
+# (objek kerangka diputar 90° dan berskala 0,01, tulang dalam cm, nama "mixamorig:…", tulang jari yang tidak dianimasikan),
+# tiga klip animasi (klip jalan maju 20 cm: gerak akar), diekspor ke GLB. Juga menulis rujukan posisi vertex hasil
+# evaluasi Blender (rujukan.json) dan gambar pratinjau, dipakai tools/aset/uji-kerangka.mjs untuk memastikan hasil
+# olah.mjs + js/assets.js bergerak persis seperti di Blender.
+#   --mixamo: juga tiruan unduhan Mixamo di <keluaran>/mixamo/ (pekerja.fbx bermesh, <klip>.fbx tanpa mesh)
+#   --ai:     juga tiruan model mentah generator AI (tanpa kerangka, lebih rapat, posisi & skala sembarang): pekerja-ai.glb
 #
-#   blender --background --factory-startup --python tools/aset/blender/contoh.py -- <folder-keluaran>
+#   blender --background --factory-startup --python tools/aset/blender/contoh.py -- <folder-keluaran> [--mixamo] [--ai]
 import bpy, bmesh, json, math, os, sys
 from mathutils import Matrix, Vector, Quaternion
 
 KELUAR = os.path.abspath(sys.argv[sys.argv.index('--') + 1])
+OPSI = sys.argv[sys.argv.index('--') + 2:]
 os.makedirs(KELUAR, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
 sc = bpy.context.scene
@@ -27,6 +31,8 @@ for s, k in (('Left', 1), ('Right', -1)):
         (s + 'Arm', s + 'Shoulder', (k * 16, 145, 0), (k * 34, 127, 0)),
         (s + 'ForeArm', s + 'Arm', (k * 34, 127, 0), (k * 52, 109, 0)),
         (s + 'Hand', s + 'ForeArm', (k * 52, 109, 0), (k * 58, 103, 0)),
+        (s + 'HandThumb1', s + 'Hand', (k * 54, 106, 3), (k * 57, 104, 7)),
+        (s + 'HandIndex1', s + 'Hand', (k * 58, 103, 1), (k * 62, 99, 1)),
         (s + 'UpLeg', 'Hips', (k * 9, 97, 0), (k * 9, 52, 0)),
         (s + 'Leg', s + 'UpLeg', (k * 9, 52, 0), (k * 9, 8, 0)),
         (s + 'Foot', s + 'Leg', (k * 9, 8, 0), (k * 9, 2, 13)),
@@ -157,7 +163,7 @@ def jalan(f):
         putar(s + 'ForeArm', X, -0.3)
     putar('Hips', Y, 0.12 * math.sin(ph))
     putar('Spine1', Y, -0.18 * math.sin(ph))
-    pb[PRE + 'Hips'].location = (0, 2.0 * abs(math.cos(ph)), 0)
+    pb[PRE + 'Hips'].location = (0, 2.0 * abs(math.cos(ph)), 20.0 * f / 30)     # maju 20 cm per siklus
 
 
 def serang(f):
@@ -228,6 +234,42 @@ sc.render.resolution_x, sc.render.resolution_y = 320, 400
 sc.render.filepath = os.path.join(KELUAR, 'pratinjau.png')
 bpy.ops.render.render(write_still=True)
 
-arm.animation_data.action = None
+def istirahat():
+    arm.animation_data.action = None
+    for b in pb:
+        b.rotation_quaternion = (1, 0, 0, 0)
+        b.location = (0, 0, 0)
+
+
+def pilih(*obj):
+    for o in sc.objects:
+        o.select_set(o in obj)
+
+
+istirahat()
 bpy.ops.export_scene.gltf(filepath=os.path.join(KELUAR, 'pekerja.glb'), export_format='GLB', export_animation_mode='ACTIONS', export_skins=True, export_yup=True)
-print('CONTOH SELESAI', os.path.join(KELUAR, 'pekerja.glb'))
+
+if '--mixamo' in OPSI:
+    MIX = os.path.join(KELUAR, 'mixamo')
+    os.makedirs(MIX, exist_ok=True)
+    for nama, n, _ in KLIP:
+        arm.animation_data.action = aksi[nama]
+        sc.frame_start, sc.frame_end = 0, n
+        pilih(arm)
+        bpy.ops.export_scene.fbx(filepath=os.path.join(MIX, nama + '.fbx'), use_selection=True, object_types={'ARMATURE'}, add_leaf_bones=True,
+                                 bake_anim=True, bake_anim_use_all_actions=False, bake_anim_use_nla_strips=False, bake_anim_force_startend_keying=True,
+                                 bake_anim_simplify_factor=0.0)
+    istirahat()
+    pilih(arm, ob)
+    bpy.ops.export_scene.fbx(filepath=os.path.join(MIX, 'pekerja.fbx'), use_selection=True, object_types={'ARMATURE', 'MESH'}, add_leaf_bones=True,
+                             bake_anim=False, path_mode='COPY', embed_textures=True)
+
+if '--ai' in OPSI:
+    ai = bpy.data.objects.new('ModelAI', me.copy())
+    sc.collection.objects.link(ai)
+    ai.matrix_world = Matrix.Translation((0.5, -0.2, 0.3)) @ Matrix.Scale(0.37, 4) @ ob.matrix_world
+    ai.modifiers.new('Rapat', 'SUBSURF').levels = 1
+    pilih(ai)
+    bpy.ops.export_scene.gltf(filepath=os.path.join(KELUAR, 'pekerja-ai.glb'), export_format='GLB', use_selection=True, export_apply=True,
+                              export_skins=False, export_animations=False)
+print('CONTOH SELESAI', KELUAR)

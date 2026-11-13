@@ -45,8 +45,23 @@ berwarna netral.
 
 ## Unit
 
-Unit butuh animasi (jalan, menyerang, bekerja). Model AI yang kaku bisa ditampilkan tetapi tidak bergerak wajar;
-pilih layanan yang menyediakan **auto-rigging + animasi** dan ekspor GLB berisi animasinya. Minta pose T/A netral.
+Unit butuh animasi (diam, jalan, bekerja, menyerang, mati). Alurnya (contoh untuk `pekerja`; perintah dijalankan dari
+folder proyek, butuh Blender):
+
+1. **Model** — buat dengan prompt di bawah (pose A, tangan kosong: senjata/alat dibuat terpisah dan ditempel ke tulang
+   tangan di game). Unduh GLB bertekstur ke `tools/aset/sumber/pekerja-ai.glb`.
+2. **Rapikan** — gabung mesh, sederhanakan, tegakkan, ekspor FBX untuk Mixamo + pratinjau depan/samping:
+   `blender -b --factory-startup --python tools/aset/blender/rapikan.py -- tools/aset/sumber/pekerja-ai.glb tools/aset/sumber/pekerja/pekerja-mixamo.fbx`
+   Bila pratinjau "depan" memperlihatkan punggung/samping, ulangi dengan `--putar 180` (atau 90/−90).
+3. **Mixamo** (mixamo.com, akun Adobe) — unggah `pekerja-mixamo.fbx`, tandai titik dagu/pergelangan/siku/lutut/selangkangan.
+   Unduh FBX: satu kali **With Skin** (pose T) disimpan sebagai `tools/aset/sumber/pekerja/mixamo/model.fbx`, lalu tiap
+   animasi **Without Skin**, 30 fps, centang **In Place** bila ada, disimpan dengan nama klipnya: `diam.fbx`, `jalan.fbx`,
+   `kerja.fbx`, `serang.fbx`, `mati.fbx` (nama file = nama klip di game).
+4. **Gabung** — semua klip ke satu GLB (jari dilebur ke tangan, gerak maju akar dibuang):
+   `blender -b --factory-startup --python tools/aset/blender/gabung.py -- tools/aset/sumber/pekerja/mixamo tools/aset/sumber/pekerja.glb`
+5. **Olah** — `node tools/aset/olah.mjs pekerja` (resep `pekerja` di olah.mjs) → `assets/m/pekerja.bin` + manifest.
+
+Alat ini diuji ujung-ke-ujung dengan `node tools/aset/uji-kerangka.mjs` (model uji buatan Blender, tanpa akun apa pun).
 
 | Nama file | Unit | Prompt |
 |---|---|---|
