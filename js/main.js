@@ -123,6 +123,8 @@
 
   // Aset (model, tekstur, langit) dimuat dulu; tanpa server (file dibuka langsung) aset tidak bisa diambil.
   window.addEventListener('load', () => {
+    // service worker: menyimpan berkas game untuk dimainkan tanpa internet (lihat sw.js); hanya di konteks aman
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { /* tanpa service worker game tetap jalan */ });
     BF.assets.muat().then(init, e => {
       const b = $('btn-start');
       b.disabled = true;

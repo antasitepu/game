@@ -1,6 +1,6 @@
 'use strict';
 // Server Benteng Fajar (tanpa dependency):
-//   1. menyajikan file game (index.html, /js, /css, /assets)
+//   1. menyajikan file game (index.html, /js, /css, /assets, serta sw.js dan manifest.webmanifest untuk pemasangan sebagai aplikasi)
 //   2. relay WebSocket untuk multiplayer: meneruskan pesan antarpemain (2–4) dalam satu ruangan
 // Jalankan: node server.js   (opsi: PORT=8080 HOST=0.0.0.0; untuk layanan publik lihat DEPLOY.md)
 // Server tidak menjalankan logika game dan tidak menyimpan data apa pun (tanpa akun, tanpa log alamat IP).
@@ -9,7 +9,7 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 const PORT = +process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
 const ROOT = __dirname;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.bin': 'application/octet-stream', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.bin': 'application/octet-stream', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.png': 'image/png', '.webmanifest': 'application/manifest+json; charset=utf-8' };
 const CODE = ['.html', '.js', '.css'];   // jenis file yang boleh diambil dari luar /assets
 const num = (k, d) => (process.env[k] ? +process.env[k] || d : d);
 const MAX_MSG = 32 * 1024;   // byte per pesan
@@ -66,7 +66,7 @@ const SECURITY = { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-r
 // Hanya skrip dan gaya milik sendiri; sambungan WebSocket boleh ke server lain (kolom alamat server di menu).
 const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; " +
   "connect-src 'self' ws: wss:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
-const GZIP = ['.html', '.js', '.css', '.json', '.bin'];
+const GZIP = ['.html', '.js', '.css', '.json', '.bin', '.webmanifest'];
 const cache = new Map();   // file → { sig, etag, body, gz }
 
 // Isi file + ETag + versi gzip-nya, disimpan di memori sampai file berubah.
@@ -98,7 +98,7 @@ function serveStatic(req, res) {
   if (p === '/') p = '/index.html';
   const ext = path.extname(p);
   // Hanya file game yang boleh diakses; server.js, tests, dsb. tidak disajikan.
-  const inCode = CODE.includes(ext) && (p === '/index.html' || p.startsWith('/js/') || p.startsWith('/css/'));
+  const inCode = (CODE.includes(ext) && (p === '/index.html' || p.startsWith('/js/') || p.startsWith('/css/'))) || p === '/sw.js' || p === '/manifest.webmanifest';
   const allowed = TYPES[ext] && (inCode || (p.startsWith('/assets/') && !CODE.includes(ext))) && !p.includes('..') && !p.includes('\0');
   const file = path.join(ROOT, p);
   if (!allowed || !file.startsWith(ROOT + path.sep)) { res.writeHead(404); res.end('Not found'); return; }

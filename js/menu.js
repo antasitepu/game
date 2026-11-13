@@ -234,6 +234,10 @@
     $('m-sfx').textContent = 'Efek suara: ' + (audio.sfx ? 'Nyala' : 'Mati');
     $('m-music').textContent = 'Musik: ' + (audio.music ? 'Nyala' : 'Mati');
     $('m-gfx').textContent = 'Grafis: ' + (BF.gfx.quality === 'hemat' ? 'Hemat (30 fps, tanpa bayangan)' : 'Tinggi');
+    // layar penuh: hanya bila peramban mendukungnya dan game tidak sedang berjalan sebagai aplikasi terpasang
+    const fsOk = !!document.documentElement.requestFullscreen && !window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+    show('m-full', fsOk);
+    $('m-full').textContent = 'Layar penuh: ' + (document.fullscreenElement ? 'Nyala' : 'Mati');
     $('m-save').disabled = mp;
     $('m-load').disabled = mp || !man;
     $('m-loadauto').disabled = mp || !auto;
@@ -336,6 +340,17 @@
     $('m-sfx').addEventListener('click', () => { audio.sfx = !audio.sfx; audio.persist(); renderGameMenu(); audio.play('select'); });
     $('m-music').addEventListener('click', () => { audio.music = !audio.music; audio.persist(); renderGameMenu(); });
     $('m-gfx').addEventListener('click', () => { BF.gfx.setQuality(BF.gfx.quality === 'hemat' ? 'tinggi' : 'hemat'); renderGameMenu(); });
+    // layar penuh; di ponsel sekaligus mengunci arah mendatar (hanya bisa saat layar penuh, dan tidak di semua peramban)
+    $('m-full').addEventListener('click', () => {
+      const done = () => renderGameMenu();
+      if (document.fullscreenElement) { document.exitFullscreen().then(done, done); return; }
+      document.documentElement.requestFullscreen().then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); }).then(done, done);
+    });
+    // pemasangan sebagai aplikasi: peramban yang mendukung memberi tahu kapan game bisa dipasang
+    let installEv = null;
+    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; show('btn-install', true); });
+    window.addEventListener('appinstalled', () => { installEv = null; show('btn-install', false); });
+    $('btn-install').addEventListener('click', () => { if (!installEv) return; installEv.prompt(); installEv = null; show('btn-install', false); });
     $('m-quit').addEventListener('click', menu.toStart);
     menu.refresh();
   };
