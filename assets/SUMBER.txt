@@ -20,6 +20,10 @@ sendiri oleh skrip tools/aset/blender/rusa.py, babi.py, dan hewan.py; tekstur bu
 Bila nanti ditambah aset berlisensi CC BY (mis. hasil paket gratis generator AI), cantumkan nama dan pembuatnya di sini
 dan di layar Bantuan game — lisensi itu mewajibkan atribusi.
 
+Pelontar Batu (m/pelontar.bin beserta t/pelontar.webp dan t/pelontar_orm.webp): mesin, juru lontar, kerangka, dan geraknya
+dibuat sendiri oleh skrip tools/aset/blender/pelontar.py dan manusia.py; teksturnya dari Poly Haven (CC0): rough_linen,
+hessian_230, weathered_brown_planks.
+
 Ikon aplikasi (ikon/ikon-*.png): digambar sendiri oleh skrip tools/aset/blender/ikon.py, tanpa bahan pihak luar.
 
 Ringkasan lisensi untuk rilis publik:

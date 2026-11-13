@@ -739,7 +739,7 @@ class Tokoh:
         """klip: [(nama, jumlah frame, fungsi(P, p))]. tiru: [(bagian sasaran, bagian sumber, rentang_z)], bawaan TIRU untuk
         bagian yang ada. lihat: opsi lembar kontak per klip {nama: {…}} atau {'*': {…}} untuk semua.
         tulang_lain: tulang tambahan (mis. kerangka kuda) sebagai (nama, induk, pangkal, ujung); tulang akar manusia
-        diikat ke induk_manusia bila peraga menyebutkannya. kelompok: [(awalan nama tulang, nama-nama bagian)] = bobot
+        diikat ke induk_manusia bila peraga menyebutkannya. kelompok: [(awalan nama tulang atau fungsi(nama), nama-nama bagian)] = bobot
         otomatis dihitung per kelompok (penunggang terhadap tulangnya sendiri, kuda terhadap tulang kuda).
         peraga: opsi Peraga (kaki=…, lengan=…) dan 'induk_manusia'. manusia=False: tanpa kerangka manusia (hewan)."""
         sc, ob, me, B = self.sc, self.ob, self.ob.data, self.bagian
@@ -758,7 +758,8 @@ class Tokoh:
         else:
             peraga.setdefault('lengan', {})
         arm = self.arm = buat_kerangka([(n, i, Vector(h) - turun, Vector(t) - turun) for n, i, h, t in tulang_lain] + orang)
-        grup = [([b.name for b in arm.data.bones if b.name.startswith(awalan)], self.di(*bagian)) for awalan, bagian in kelompok] if kelompok else None
+        cocok = lambda awalan, nama: awalan(nama) if callable(awalan) else nama.startswith(awalan)
+        grup = [([b.name for b in arm.data.bones if cocok(awalan, b.name)], self.di(*bagian)) for awalan, bagian in kelompok] if kelompok else None
         self.catatan += ikat(ob, arm, kaku, tiru=[(self.di(a), self.di(b), r) for a, b, r in tiru], kelompok=grup)
         P = self.P = Peraga(arm, **peraga)
         for nama, frame, fungsi in klip:
@@ -1070,10 +1071,11 @@ class Peraga:
             pose = {}
             for b in self.pb:
                 M = self.arm.convert_space(pose_bone=b, matrix=b.matrix, from_space='POSE', to_space='LOCAL')
-                q = M.to_quaternion()
+                skala = M.to_scale()
+                q = M.to_quaternion() if (skala - Vector((1, 1, 1))).length < 1e-6 else M.decompose()[1]
                 if data and data[-1][b.name][1].dot(q) < 0:
                     q.negate()
-                pose[b.name] = (M.to_translation(), q)
+                pose[b.name] = (M.to_translation(), q, skala)
             data.append(pose)
         self.rekaman[nama] = data
 
@@ -1092,12 +1094,15 @@ class Peraga:
             a.use_fake_user = True
             self.arm.animation_data.action = a
             bergeser = {b.name for b in self.pb if b.parent is None or any(pose[b.name][0].length > 1e-6 for pose in data)}
+            berskala = {b.name for b in self.pb if any((pose[b.name][2] - Vector((1, 1, 1))).length > 1e-6 for pose in data)}   # mis. batu pelontar yang disembunyikan
             for f, pose in enumerate(data):
                 for b in self.pb:
-                    b.location, b.rotation_quaternion = pose[b.name]
+                    b.location, b.rotation_quaternion, b.scale = pose[b.name]
                     b.keyframe_insert('rotation_quaternion', frame=f)
                     if b.name in bergeser:
                         b.keyframe_insert('location', frame=f)
+                    if b.name in berskala:
+                        b.keyframe_insert('scale', frame=f)
             aksi[nama] = a
         self.diam()
         return aksi
@@ -1105,7 +1110,7 @@ class Peraga:
     def diam(self):
         self.arm.animation_data.action = None
         for b in self.pb:
-            b.rotation_quaternion, b.location = (1, 0, 0, 0), (0, 0, 0)
+            b.rotation_quaternion, b.location, b.scale = (1, 0, 0, 0), (0, 0, 0), (1, 1, 1)
 
     def pasang(self, a):
         ad = self.arm.animation_data
@@ -1545,8 +1550,9 @@ def gugur_tongkat(P, p):
 
 # ---------------------------------------------------------------- pratinjau gerak
 
-def lembar(P, aksi, berkas, n=6, arah=(0.7, -1, 0.35), pusat=(0, 0, 0.88), jarak=4.3, ukuran=(260, 330)):
-    """Lembar kontak: n frame merata dari satu aksi, berjajar dalam satu gambar (memakai kamera & cahaya adegan)."""
+def lembar(P, aksi, berkas, n=6, arah=(0.7, -1, 0.35), pusat=(0, 0, 0.88), jarak=4.3, ukuran=(260, 330), rentang=None):
+    """Lembar kontak: n frame merata dari satu aksi (atau dari `rentang` = (frame awal, frame akhir)), berjajar dalam satu
+    gambar (memakai kamera & cahaya adegan)."""
     sc = bpy.context.scene
     kam, arah = sc.camera, Vector(arah).normalized()
     kam.data.type, kam.data.lens = 'PERSP', 70
@@ -1555,9 +1561,9 @@ def lembar(P, aksi, berkas, n=6, arah=(0.7, -1, 0.35), pusat=(0, 0, 0.88), jarak
     lama = (sc.render.resolution_x, sc.render.resolution_y, sc.render.filepath)
     sc.render.resolution_x, sc.render.resolution_y = ukuran
     P.pasang(aksi)
-    akhir, petak = int(round(aksi.frame_range[1])), []
+    (mulai, akhir), petak = rentang or (0, int(round(aksi.frame_range[1]))), []
     for i in range(n):
-        sc.frame_set(round(akhir * i / (n - 1)) if n > 1 else 0)
+        sc.frame_set(round(mulai + (akhir - mulai) * i / (n - 1)) if n > 1 else mulai)
         sc.render.filepath = berkas + '.tmp%d.png' % i
         bpy.ops.render.render(write_still=True)
         g = bpy.data.images.load(sc.render.filepath)

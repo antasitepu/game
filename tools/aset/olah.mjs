@@ -62,6 +62,8 @@ const RESEP = {
   // Unit berkuda: kuda dan penunggang satu mesh dan satu kerangka (40 tulang); titik asal di tanah di bawah HorseRoot.
   penunggang: { jenis: 'kerangka', sumber: 'penunggang', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000, 2250, 1000] },
   pemanah_kuda: { jenis: 'kerangka', sumber: 'pemanah_kuda', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5000, 2250, 1000] },
+  // Pelontar Batu: mesin beroda dan juru lontarnya satu mesh dan satu kerangka (28 tulang: 7 berawalan Mesin + 21 manusia).
+  pelontar: { jenis: 'kerangka', sumber: 'pelontar', lokal: true, skala: 0.86 / 1.771, tekstur: 512, lod: [5200, 2340, 1040] },
   // Bangunan rakitan buatan skrip Blender (percontohan): satuan sumber = tile, titik asal di tanah di tengah tapak.
   // tapak: sisi denah (tile); badan: [x0, z0, x1, z1, tinggi cucuran] per bagian dalam koordinat sudut tapak, untuk perancah.
   // Belum dipakai game: asetnya tidak ikut `olah semua` (percontohan: true) dan dibuat hanya bila resepnya disebut.
