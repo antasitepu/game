@@ -220,6 +220,7 @@
     const s = game().s, mp = s.mp, man = BF.save.meta('manual'), auto = BF.save.meta('auto');
     $('m-sfx').textContent = 'Efek suara: ' + (audio.sfx ? 'Nyala' : 'Mati');
     $('m-music').textContent = 'Musik: ' + (audio.music ? 'Nyala' : 'Mati');
+    $('m-gfx').textContent = 'Grafis: ' + (BF.gfx.quality === 'hemat' ? 'Hemat (30 fps, tanpa bayangan)' : 'Tinggi');
     $('m-save').disabled = mp;
     $('m-load').disabled = mp || !man;
     $('m-loadauto').disabled = mp || !auto;
@@ -321,6 +322,7 @@
     $('m-loadauto').addEventListener('click', () => { if (!load('auto')) note('Simpanan otomatis tidak ada atau rusak.'); });
     $('m-sfx').addEventListener('click', () => { audio.sfx = !audio.sfx; audio.persist(); renderGameMenu(); audio.play('select'); });
     $('m-music').addEventListener('click', () => { audio.music = !audio.music; audio.persist(); renderGameMenu(); });
+    $('m-gfx').addEventListener('click', () => { BF.gfx.setQuality(BF.gfx.quality === 'hemat' ? 'tinggi' : 'hemat'); renderGameMenu(); });
     $('m-quit').addEventListener('click', menu.toStart);
     menu.refresh();
   };

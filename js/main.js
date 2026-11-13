@@ -8,7 +8,7 @@
     s: null, ready: false, running: false, paused: false, menuOpen: false, speed: 1, w: 0, h: 0, dpr: 1, canvas: null,
     cam: { x: BF.MAP_SIZE / 2, y: BF.MAP_SIZE / 2, yaw: BF.view.YAW_DEFAULT, zoom: BF.view.ZOOM_DEFAULT },
   };
-  let fx, mmCtx, acc = 0, last = 0, frameNo = 0;
+  let fx, mmCtx, acc = 0, last = 0, frameNo = 0, drawn = 0;
 
   function resize() {
     const dpr = game.dpr = window.devicePixelRatio || 1, mm = $('minimap'), f = $('fx');
@@ -84,11 +84,16 @@
         if (acc > BF.DT * 8) acc = 0;
       }
       BF.input.update(dt);
-      // alpha: posisi di antara dua tick simulasi, agar gerak unit mulus pada 60 fps
-      BF.render({ fx, w: game.w, h: game.h, dpr: game.dpr, cam: game.cam, s, ui: BF.ui, alpha: game.paused || s.over ? 1 : Math.min(1, acc / BF.DT) });
-      if (frameNo++ % 4 === 0) {
-        mmCtx.setTransform(game.dpr, 0, 0, game.dpr, 0, 0);
-        BF.renderMinimap(mmCtx, MM_SIZE, s);
+      // Simulasi maju tiap frame layar; gambar dibatasi sesuai mutu grafis (mode hemat: 30 kali per detik). Batasnya
+      // dilonggarkan 3 ms supaya getar waktu antar-frame tidak membuat satu gambar terlewat.
+      if (now - drawn >= 1000 / BF.gfx.QUALITY[BF.gfx.quality].fps - 3) {
+        drawn = now;
+        // alpha: posisi di antara dua tick simulasi, agar gerak unit mulus pada 60 fps
+        BF.render({ fx, w: game.w, h: game.h, dpr: game.dpr, cam: game.cam, s, ui: BF.ui, alpha: game.paused || s.over ? 1 : Math.min(1, acc / BF.DT) });
+        if (frameNo++ % 4 === 0) {
+          mmCtx.setTransform(game.dpr, 0, 0, game.dpr, 0, 0);
+          BF.renderMinimap(mmCtx, MM_SIZE, s);
+        }
       }
       BF.hud.update(s);
     }

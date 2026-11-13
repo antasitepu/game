@@ -28,6 +28,29 @@
 
   const hash = (x, y) => { let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263)) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; };
 
+  // ---------------------------------------------------------------- mutu grafis
+
+  // 'tinggi': resolusi layar penuh (sampai 2×), bayangan, 60 fps. 'hemat' (bawaan di perangkat sentuh): resolusi 1×,
+  // tanpa bayangan, pemandangan satu tingkat lebih sederhana, dan digambar 30 kali per detik (lihat main.js) — untuk
+  // ponsel, laptop yang panas, atau menghemat baterai. Pilihan disimpan di peramban.
+  const Q_KEY = 'bf.grafis', QUALITY = { tinggi: { dpr: 2, shadow: true, lod: 0, fps: 60 }, hemat: { dpr: 1, shadow: false, lod: 1, fps: 30 } };
+  let lastSize = null;
+  gfx.QUALITY = QUALITY;
+  gfx.quality = (() => {
+    let q = null;
+    try { q = localStorage.getItem(Q_KEY); } catch (e) { /* penyimpanan tidak tersedia */ }
+    return QUALITY[q] ? q : window.matchMedia && window.matchMedia('(pointer: coarse)').matches ? 'hemat' : 'tinggi';
+  })();
+  gfx.setQuality = function (q) {
+    if (!QUALITY[q]) return;
+    gfx.quality = q;
+    try { localStorage.setItem(Q_KEY, q); } catch (e) { /* abaikan */ }
+    if (!renderer) return;
+    sun.castShadow = QUALITY[q].shadow;
+    if (W) W.lod = -1;                                    // paksa tingkat rinci pemandangan dihitung ulang
+    if (lastSize) gfx.resize(lastSize[0], lastSize[1], lastSize[2]);
+  };
+
   // ---------------------------------------------------------------- inisialisasi
 
   gfx.init = function (canvas) {
@@ -45,7 +68,7 @@
     fill = new THREE.DirectionalLight(0xe4e8ee, 0.75);
     SUN_OFFSET.fromArray(BF.assets.matahari);
     sun = new THREE.DirectionalLight(0xfff1d6, 2.4);
-    sun.castShadow = true;
+    sun.castShadow = QUALITY[gfx.quality].shadow;
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.03;
@@ -74,7 +97,8 @@
 
   gfx.resize = function (w, h, dpr) {
     if (!renderer) return;
-    renderer.setPixelRatio(Math.min(dpr, 2));
+    lastSize = [w, h, dpr];
+    renderer.setPixelRatio(Math.min(dpr, QUALITY[gfx.quality].dpr));
     renderer.setSize(w, h, false);
     view.resize(w, h);
   };
@@ -168,7 +192,8 @@
   }
 
   // Statistik render frame terakhir (untuk mengukur beban).
-  gfx.info = () => ({ drawCalls: renderer.info.render.calls, segitiga: renderer.info.render.triangles, geometri: renderer.info.memory.geometries, tekstur: renderer.info.memory.textures });
+  gfx.info = () => ({ drawCalls: renderer.info.render.calls, segitiga: renderer.info.render.triangles, geometri: renderer.info.memory.geometries, tekstur: renderer.info.memory.textures,
+    mutu: gfx.quality, rasio: renderer.getPixelRatio(), bayangan: sun.castShadow });
 
   // Objek tampilan sebuah unit (Group three.js) — untuk tes dan alat periksa.
   gfx.unitGroup = id => { const o = W && W.units.get(id); return o ? o.group : null; };
@@ -855,7 +880,7 @@
     const half = cam.zoom * 0.95 + 4, sc = sun.shadow.camera;
     if (sc.right !== half) { sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half; sc.updateProjectionMatrix(); }
 
-    const lod = cam.zoom <= LOD_ZOOM[0] ? 0 : cam.zoom <= LOD_ZOOM[1] ? 1 : 2;
+    const lod = Math.min(2, (cam.zoom <= LOD_ZOOM[0] ? 0 : cam.zoom <= LOD_ZOOM[1] ? 1 : 2) + QUALITY[gfx.quality].lod);
     if (lod !== W.lod) {
       W.lod = lod;
       for (const m of W.inst) { m.geometry = m.userData.lods[Math.min(lod, m.userData.lods.length - 1)]; if (m.userData.decor) m.visible = lod < 2; }
