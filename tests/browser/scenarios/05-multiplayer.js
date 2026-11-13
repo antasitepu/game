@@ -104,7 +104,7 @@ module.exports = async ({ page, check, root }) => {
     // ---- paket nakal dari lawan diabaikan (unit milik tuan rumah tidak bisa diperintah tamu)
     await b.ev(`(() => { const s = BF.game.s; BF.issue({ c: 'destroy', ids: s.units.filter(u => u.owner === 0).map(u => u.id).concat(s.buildings.filter(q => q.owner === 0).map(q => q.id)) }); BF.issue({ c: 'move', ids: s.units.filter(u => u.owner === 0).map(u => u.id), x: 1, y: 1 }); })()`);
     await sleep(800);
-    check('lawan tidak bisa memerintah/menghancurkan milik kita', await a.ev(`(() => { const s = BF.game.s; return s.units.filter(u => u.owner === 0).length === 4 && s.buildings.some(q => q.owner === 0 && q.type === 'townhall') && s.units.filter(u => u.owner === 0).every(u => u.order.type === 'gather'); })()`) && await a.ev(`!BF.net.desync`));
+    check('lawan tidak bisa memerintah/menghancurkan milik kita', await a.ev(`(() => { const s = BF.game.s; return s.units.filter(u => u.owner === 0).length === 5 && s.buildings.some(q => q.owner === 0 && q.type === 'townhall') && s.units.filter(u => u.owner === 0 && u.type === 'worker').every(u => u.order.type === 'gather') && s.units.filter(u => u.owner === 0 && u.type === 'rider').every(u => u.order.type === 'idle'); })()`) && await a.ev(`!BF.net.desync`));
 
     // ---- latensi jaringan 300 ms per arah: lebih lambat, tetapi tidak macet dan tetap sinkron
     for (const p of [a, b]) await p.ev(`(() => { const ws = BF.net.ws, send = ws.send.bind(ws); ws.send = d => setTimeout(() => { if (ws.readyState === 1) send(d); }, 300); window.__h = {}; })()`);

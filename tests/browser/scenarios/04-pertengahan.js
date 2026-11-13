@@ -59,8 +59,9 @@ module.exports = async ({ page, check }) => {
   const mf = await p.ev(H.minimapPoint(String(lahan.x + 0.5), String(lahan.y + 0.5)));
   await p.click(mf.x, mf.y, 'right');
   await p.sleep(150);
-  const form = await p.ev(`(() => { const s = BF.game.s, us = s.units.filter(u => u.owner === 0 && u.type !== 'worker' && u.order.type === 'move'); return { n: us.length, pace: us.map(u => u.order.pace), min: Math.min(...us.map(u => BF.unitDef(s, u).speed)), face: us.map(u => u.order.face) }; })()`);
-  check('perintah gerak membawa formasi terpilih (laju bersama & arah hadap)', n < 2 || (form.n === n && form.pace.every(v => v === form.min) && form.face.every(v => typeof v === 'number' && v === form.face[0])), { n, bergerak: form.n, min: form.min });
+  // (pasukan bisa sedang bertempur: unit yang gugur di sela-sela tes tidak dihitung — bandingkan dengan yang masih hidup)
+  const form = await p.ev(`(() => { const s = BF.game.s, all = s.units.filter(u => u.owner === 0 && u.type !== 'worker'), us = all.filter(u => u.order.type === 'move'); return { hidup: all.length, n: us.length, pace: us.map(u => u.order.pace), min: Math.min(...us.map(u => BF.unitDef(s, u).speed)), face: us.map(u => u.order.face) }; })()`);
+  check('perintah gerak membawa formasi terpilih (laju bersama & arah hadap)', form.hidup < 2 || (form.n === form.hidup && form.pace.every(v => v === form.min) && form.face.every(v => typeof v === 'number' && v === form.face[0])), { n, bergerak: form.n, min: form.min, lain: await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.type !== 'worker' && u.order.type !== 'move').map(u => [u.type, u.order.type, +u.x.toFixed(1), +u.y.toFixed(1), JSON.stringify(u.order).slice(0, 90)])`) });
   await p.key('a', 'KeyA', 65);
   await p.sleep(100);
   check('A → mode gerak-serang', await p.ev(`BF.ui.amove === true`));
@@ -68,7 +69,7 @@ module.exports = async ({ page, check }) => {
   const mm = await p.ev(H.minimapPoint(`BF.game.s.buildings.find(b => b.owner === 1).tx + 1.5`, `BF.game.s.buildings.find(b => b.owner === 1).ty + 1.5`));
   await p.click(mm.x, mm.y, 'right');
   await p.sleep(150);
-  check('klik kanan minimap → pasukan berangkat', (await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.type !== 'worker' && (u.order.type === 'move' || u.order.type === 'attack')).length`)) === n);
+  check('klik kanan minimap → pasukan berangkat', await p.ev(`(() => { const all = BF.game.s.units.filter(u => u.owner === 0 && u.type !== 'worker'); return all.length > 0 && all.every(u => u.order.type === 'move' || u.order.type === 'attack'); })()`));
   await p.key('e', 'KeyE', 69);
   await p.sleep(120);
   check('E → formasi Bebas', await p.ev(`BF.ui.formation === 0`));

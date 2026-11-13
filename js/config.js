@@ -10,6 +10,9 @@ BF.DT = 1 / BF.TICK_RATE;
 BF.MAX_POP = 75;
 BF.CARRY_CAP = 10;
 BF.START_WORKERS = 4;
+// Unit awal selain pekerja: seorang Penunggang Kuda untuk menjelajah peta sejak awal (unitnya sendiri baru bisa dilatih
+// di Era Baja). Kapasitas populasi Balai Kota cukup untuk semua unit awal + satu pekerja pertama.
+BF.START_EXTRA = ['rider'];
 BF.START_RES = { food: 250, wood: 250, gold: 100, stone: 100 };
 BF.SAVE_VERSION = 1;
 
@@ -180,7 +183,7 @@ BF.UNITS = {
 
 BF.BUILDINGS = {
   townhall: {
-    name: 'Balai Kota', size: 3, era: 0, cost: { wood: 250, stone: 150 }, time: 90, hp: 2400, pop: 5, sight: 8,
+    name: 'Balai Kota', size: 3, era: 0, cost: { wood: 250, stone: 150 }, time: 90, hp: 2400, pop: 6, sight: 8,
     dropoff: true, trains: ['worker', 'healer'], atk: 6, range: 6, cooldown: 2, garrison: 10,
     desc: 'Pusat permukiman. Melatih Pekerja dan Tabib, menerima setoran, dan meneliti era baru.',
   },

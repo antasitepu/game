@@ -8,14 +8,16 @@ module.exports = async ({ page, check }) => {
   await p.sleep(300);
   await p.clickEl('#btn-start');
   await p.sleep(700);
-  await p.ev(`(() => { const r = BF.render; window.__gambar = 0; BF.render = o => { window.__gambar++; return r(o); }; })()`);
-  // jumlah gambar dan tick simulasi dalam dua detik
-  const laju = async () => { const a = await p.ev(`({ g: window.__gambar, t: BF.game.s.tick, w: performance.now() })`); await p.sleep(2000); const b = await p.ev(`({ g: window.__gambar, t: BF.game.s.tick, w: performance.now() })`), d = (b.w - a.w) / 1000; return { fps: +((b.g - a.g) / d).toFixed(1), tps: +((b.t - a.t) / d).toFixed(1) }; };
+  await p.ev(`(() => { const r = BF.render, q = window.requestAnimationFrame; window.__gambar = 0; window.__frame = 0; BF.render = o => { window.__gambar++; return r(o); }; window.requestAnimationFrame = f => q(t => { window.__frame++; f(t); }); })()`);
+  // dalam dua detik: gambar per detik (fps), frame layar yang tersedia per detik (layar), dan tick simulasi per detik.
+  // Laju frame layar bergantung mesin: 60 biasanya, tetapi bisa 30 bila GPU sedang dipakai program lain — karena itu
+  // batas di bawah dinyatakan terhadap `layar`, bukan angka mutlak.
+  const laju = async () => { const baca = `({ g: window.__gambar, f: window.__frame, t: BF.game.s.tick, w: performance.now() })`, a = await p.ev(baca); await p.sleep(2000); const b = await p.ev(baca), d = (b.w - a.w) / 1000; return { fps: +((b.g - a.g) / d).toFixed(1), layar: +((b.f - a.f) / d).toFixed(1), tps: +((b.t - a.t) / d).toFixed(1) }; };
   const info = () => p.ev(`(({ mutu, rasio, bayangan }) => ({ mutu, rasio, bayangan }))(BF.gfx.info())`);
 
   let i = await info(), l = await laju();
   check('komputer: bawaan mutu Tinggi (resolusi 2×, bayangan)', i.mutu === 'tinggi' && i.rasio === 2 && i.bayangan === true, i);
-  check('Tinggi: ±60 gambar per detik, simulasi 20 tick per detik', l.fps > 45 && l.tps > 17 && l.tps < 23, l);
+  check('Tinggi: menggambar di tiap frame layar, simulasi 20 tick per detik', l.layar > 20 && l.fps > l.layar * 0.9 && l.tps > 17 && l.tps < 23, l);
   await p.shot('80-grafis-tinggi');
 
   // tingkat rinci model unit mengikuti jarak kamera: penuh saat dekat, ±45% pada jarak bermain, ±20% saat jauh
@@ -34,7 +36,7 @@ module.exports = async ({ page, check }) => {
   await p.sleep(600);
   i = await info(); l = await laju();
   check('Hemat: resolusi 1×, tanpa bayangan', i.mutu === 'hemat' && i.rasio === 1 && i.bayangan === false, i);
-  check('Hemat: ±30 gambar per detik, simulasi tetap 20 tick per detik', l.fps > 22 && l.fps < 36 && l.tps > 17 && l.tps < 23, l);
+  check('Hemat: paling banyak ±30 gambar per detik (separuh frame dilewati di layar 60 Hz), simulasi tetap 20 tick per detik', l.fps > 18 && l.fps < 36 && (l.layar < 50 || l.fps < l.layar * 0.65) && l.tps > 17 && l.tps < 23, l);
   const lodHemat = [await tingkat(9), await tingkat(17), await tingkat(30)];
   check('Hemat: tidak pernah memakai tingkat penuh (1 / 1 / 2)', lodHemat.join() === '1,1,2', lodHemat);
   await p.ev(`BF.game.cam.zoom = BF.view.ZOOM_DEFAULT`);

@@ -9,6 +9,8 @@ const BF = globalThis.BF;
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => { ok ? pass++ : fail++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail !== undefined ? '  → ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)) : '')); };
 const run = (s, ticks) => { for (let i = 0; i < ticks && !s.over; i++) { BF.step(s); s.events.length = 0; } };
+// Menyingkirkan unit awal selain pekerja (Penunggang Kuda), untuk tes yang menyusun pasukannya sendiri secara persis.
+const tanpaUnitAwal = s => { for (const u of s.units.slice()) if (u.type !== 'worker') BF.kill(s, u, true); s.units = s.units.filter(u => !u.dead); s.effects.length = 0; s.hasDead = false; return s; };
 const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 96 && isFinite(u.hp));
 
 // 1. AI lawan AI: selesai tanpa error di berbagai seed, wangsa, dan kesulitan
@@ -202,7 +204,7 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   check('lawan tidak bisa menyuruh unit kita berlindung', ws.every(u => u.order.type === 'idle'));
   BF.exec(s, 0, { c: 'garrison', ids, bid: th.id });
   run(s, 20 * 20);
-  check('pekerja masuk Balai Kota: hilang dari peta, populasi tetap', th.inside.length === 4 && !s.units.some(u => u.owner === 0) && ids.every(id => !s.byId.has(id)) && p.pop === pop0, { dalam: th.inside.length, pop: p.pop });
+  check('pekerja masuk Balai Kota: hilang dari peta, populasi tetap', th.inside.length === 4 && !s.units.some(u => u.owner === 0 && u.type === 'worker') && ids.every(id => !s.byId.has(id)) && p.pop === pop0, { dalam: th.inside.length, pop: p.pop });
   check('unit di dalam pulih perlahan', ws[0].hp > 15 && ws[0].hp <= 30, { hp: ws[0].hp });
 
   // musuh menyerbu: yang berlindung tak tersentuh, balai kota menembak 1 + 4/2 = 3 panah per tembakan
@@ -373,7 +375,7 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
 
 // 12. AI lebih cerdas (BF.DIFF.smart): mundur saat kalah jumlah, mengapit dari dua arah, berburu babi berempat, berdagang
 {
-  const mk = diff => { const s = BF.newGame({ seed: 4202, ai: [false, true], difficulty: diff, factions: ['padang', 'bara'] }); s.animals.length = 0; s.players[0].popCap = s.players[1].popCap = 70; return s; };
+  const mk = diff => { const s = tanpaUnitAwal(BF.newGame({ seed: 4202, ai: [false, true], difficulty: diff, factions: ['padang', 'bara'] })); s.animals.length = 0; s.players[0].popCap = s.players[1].popCap = 70; return s; };
   const ring = (s, cx, cy, type, owner, n) => { const out = []; for (let i = 0; i < n; i++) { const f = BF.findFreeNear(s.map, Math.round(cx + (i % 4) - 1.5), Math.round(cy + ((i / 4) | 0)), 6, owner); out.push(BF.spawnUnit(s, type, owner, f.x + 0.5, f.y + 0.5)); } return out; };
   const AI0 = (wave, sent) => ({ state: 'attack', waveSize: wave, sent, target: 0, rebalT: 0, dirX: 0, dirY: 0 });
 
@@ -766,7 +768,7 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
   }
   {
     // AI: melatih Tabib bila pasukan cukup besar; Tabib tidak ikut menyerbu sasaran, melainkan mengikuti pasukan
-    const mkAI = diff => { const s = BF.newGame({ seed: 4202, ai: [false, true], difficulty: diff, factions: ['padang', 'bara'] }); s.animals.length = 0; const q = s.players[1]; q.era = 1; q.popCap = 70; q.res = { food: 2000, wood: 2000, gold: 2000, stone: 2000 }; return s; };
+    const mkAI = diff => { const s = tanpaUnitAwal(BF.newGame({ seed: 4202, ai: [false, true], difficulty: diff, factions: ['padang', 'bara'] })); s.animals.length = 0; const q = s.players[1]; q.era = 1; q.popCap = 70; q.res = { food: 2000, wood: 2000, gold: 2000, stone: 2000 }; return s; };
     const ring = (s, cx, cy, type, n) => { const out = []; for (let i = 0; i < n; i++) out.push(put(s, type, 1, cx + (i % 4) - 1.5, cy + ((i / 4) | 0))); return out; };
     const trains = diff => { const s = mkAI(diff), th = s.buildings.find(b => b.owner === 1 && b.type === 'townhall'); ring(s, th.tx + 1, th.ty + 6, 'spear', 9); run(s, 20 * 40); return s.units.filter(u => u.owner === 1 && u.type === 'healer').length + th.queue.filter(q => q.unit === 'healer').length; };
     const n1 = trains('normal'), n0 = trains('easy');
@@ -781,6 +783,27 @@ const sane = s => s.units.every(u => u.x >= 0 && u.y >= 0 && u.x < 96 && u.y < 9
     run(s, 20 * 12);
     check('Tabib AI mengikuti pasukan dan memulihkan yang terluka di jalan', army[0].hp > 14 || BF.dist(med.x - army[0].x, med.y - army[0].y) < 8, { hp: +army[0].hp.toFixed(1), jarak: +BF.dist(med.x - army[0].x, med.y - army[0].y).toFixed(1) });
   }
+}
+
+// 17. Unit awal: tiap pemain memulai dengan seorang Penunggang Kuda; populasi awal masih menyisakan tempat
+{
+  for (const n of [2, 4]) {
+    const s = BF.newGame({ seed: 61 + n, players: n }), okAll = s.players.every(p => {
+      const mine = s.units.filter(u => u.owner === p.id), riders = mine.filter(u => u.type === 'rider'), th = s.buildings.find(b => b.owner === p.id && b.type === 'townhall');
+      return mine.length === BF.START_WORKERS + 1 && riders.length === 1 && BF.dist(riders[0].x - th.tx - 1.5, riders[0].y - th.ty - 1.5) < 6 &&
+        BF.passable(s.map, Math.floor(riders[0].x), Math.floor(riders[0].y), p.id) && p.pop === BF.START_WORKERS + 1 && p.popCap === 6;
+    });
+    check(n + ' pemain: tiap pemain mulai dengan 4 pekerja + 1 Penunggang Kuda di dekat Balai Kota, populasi 5/6', okAll, s.players.map(p => p.pop + '/' + p.popCap));
+  }
+  const s = BF.newGame({ seed: 63, ai: [false, false], factions: ['bara', 'rimba'] }), p = s.players[0], th = s.buildings.find(b => b.owner === 0), r = s.units.find(u => u.owner === 0 && u.type === 'rider');
+  BF.exec(s, 0, { c: 'train', bid: th.id, unit: 'worker' });
+  check('pekerja pertama langsung bisa dilatih (masih ada tempat populasi)', th.queue.length === 1);
+  BF.exec(s, 0, { c: 'move', ids: [r.id], x: r.x + 6, y: r.y + 3 });
+  const x0 = r.x;
+  run(s, 20 * 2);
+  check('Penunggang Kuda awal bisa diperintah sejak Era Perintis dan bergerak secepat kuda', r.order.type === 'move' && Math.abs(r.x - x0) > 2.5 && p.era === 0 && BF.unitDef(s, r).era === 1, { geser: +(r.x - x0).toFixed(1) });
+  BF.exec(s, 0, { c: 'train', bid: th.id, unit: 'rider' });
+  check('melatih Penunggang Kuda tetap butuh Era Baja dan Kandang', th.queue.every(q => q.unit !== 'rider'));
 }
 
 console.log(`\nHASIL: ${pass} lulus, ${fail} gagal`);

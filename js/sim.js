@@ -132,6 +132,10 @@
     map.starts.forEach((st, i) => {
       BF.spawnBuilding(s, 'townhall', i, st.x - 1, st.y - 1, true);
       for (let k = 0; k < BF.START_WORKERS; k++) BF.spawnUnit(s, 'worker', i, st.x - 1 + k * 0.9, st.y + 2.5);
+      BF.START_EXTRA.forEach((t, k) => {                    // di sisi lain Balai Kota, terpisah dari barisan pekerja
+        const f = BF.findFreeNear(map, st.x + 3 + k, st.y - 1, 5, i);
+        BF.spawnUnit(s, t, i, f.x + 0.5, f.y + 0.5);
+      });
     });
     spawnAnimals(s);
     BF.updateFog(s);

@@ -52,7 +52,7 @@ module.exports = async ({ page, check }) => {
 
   await p.ev(`(() => { const s = BF.game.s; for (let i = 0; i < 1800; i++) BF.step(s); })()`);
   await p.sleep(300);
-  check('setelah 90 dtk: rumah jadi, populasi 6/10, setoran berjalan', await p.ev(`(() => { const s = BF.game.s, q = s.players[0]; return s.buildings.some(b => b.type === 'house' && b.built) && q.popCap === 10 && q.pop === 6 && q.gathered > 0; })()`));
+  check('setelah 90 dtk: rumah jadi, populasi 7/11 (4 pekerja + 2 dilatih + penunggang kuda awal), setoran berjalan', await p.ev(`(() => { const s = BF.game.s, q = s.players[0]; return s.buildings.some(b => b.type === 'house' && b.built) && q.popCap === 11 && q.pop === 7 && q.gathered > 0; })()`), await p.ev(`BF.game.s.players[0].pop + '/' + BF.game.s.players[0].popCap`));
   if (tree) check('pekerja baru otomatis menebang', (await p.ev(`BF.game.s.units.filter(u => u.owner === 0 && u.order.type === 'gather' && u.order.res === 'wood').length`)) >= 2);
   await p.shot('04-setelah-90-detik');
 
